@@ -2,10 +2,36 @@ import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, powerSav
 import { IpcMainInvokeEvent } from 'electron/main';
 import path from 'path';
 import axios from 'axios';
+import * as fs from 'fs';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+
+// 窗口位置配置文件路径
+const configPath = path.join(app.getPath('userData'), 'window-config.json');
+
+// 保存窗口配置
+function saveWindowConfig(config: any) {
+  try {
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+  } catch (error) {
+    console.error('保存窗口配置失败:', error);
+  }
+}
+
+// 读取窗口配置
+function loadWindowConfig(): any {
+  try {
+    if (fs.existsSync(configPath)) {
+      const data = fs.readFileSync(configPath, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('读取窗口配置失败:', error);
+  }
+  return null;
+}
 
 // 创建系统托盘
 function createTray() {
@@ -143,8 +169,23 @@ function createWindow() {
       mainWindow.setMinimumSize(1, 1);
       mainWindow.setMaximumSize(9999, 9999);
       
-      // 设置为迷你窗口大小
-      mainWindow.setSize(300, 100);
+      // 保存当前正常模式的位置
+      const [x, y] = mainWindow.getPosition();
+      const [width, height] = mainWindow.getSize();
+      saveWindowConfig({
+        normalMode: { x, y, width, height }
+      });
+      
+      // 读取上次迷你模式的位置
+      const config = loadWindowConfig();
+      if (config && config.miniMode) {
+        // 恢复上次迷你模式的位置
+        mainWindow.setPosition(config.miniMode.x, config.miniMode.y);
+        mainWindow.setSize(300, 100);
+      } else {
+        // 如果没有保存的位置，使用默认大小
+        mainWindow.setSize(300, 100);
+      }
       
       // 锁定大小
       mainWindow.setMinimumSize(300, 100);
@@ -161,15 +202,31 @@ function createWindow() {
       mainWindow.setMinimumSize(1, 1);
       mainWindow.setMaximumSize(9999, 9999);
       
-      // 恢复大小
-      mainWindow.setSize(1200, 800);
+      // 保存当前迷你模式的位置
+      const [x, y] = mainWindow.getPosition();
+      const config = loadWindowConfig() || {};
+      saveWindowConfig({
+        ...config,
+        miniMode: { x, y, width: 300, height: 100 }
+      });
+      
+      // 读取上次正常模式的位置
+      const savedConfig = loadWindowConfig();
+      if (savedConfig && savedConfig.normalMode) {
+        // 恢复上次正常模式的位置
+        mainWindow.setPosition(savedConfig.normalMode.x, savedConfig.normalMode.y);
+        mainWindow.setSize(savedConfig.normalMode.width, savedConfig.normalMode.height);
+      } else {
+        // 如果没有保存的位置，使用默认大小并居中
+        mainWindow.setSize(1200, 800);
+        mainWindow.center();
+      }
       
       // 设置正常模式的最小限制
       mainWindow.setMinimumSize(800, 600);
       
       // 取消置顶
       mainWindow.setAlwaysOnTop(false);
-      mainWindow.center(); // 居中显示
       
       // 通知渲染进程模式已切换
       mainWindow.webContents.send('mini-mode-changed', false);
