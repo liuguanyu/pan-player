@@ -82,16 +82,7 @@ const App: React.FC = () => {
 
         {/* Content: Song List */}
         <div className="flex-1 bg-background flex flex-col overflow-hidden relative">
-          {/* Song List Header */}
-          <div className="h-10 border-b flex items-center px-4 text-sm font-medium text-muted-foreground">
-            <div className="w-12 text-center">#</div>
-            <div className="flex-1">标题</div>
-            <div className="w-16 text-right">时长</div>
-            <div className="w-28 text-right">大小</div>
-            <div className="w-10"></div>
-          </div>
-          
-          {/* Song List Body */}
+          {/* Song List with Header */}
           <SongList />
           
           {/* Lyrics Overlay */}

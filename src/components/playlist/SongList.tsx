@@ -46,22 +46,22 @@ const SongRow = memo(({
       }`}
       onDoubleClick={() => onDoubleClick(song)}
     >
-      <td className="w-12 text-center py-2 text-sm text-muted-foreground">
+      <td className="py-2 px-2 text-center text-sm text-muted-foreground w-12">
         {isPlaying ? '▶' : index + 1}
       </td>
-      <td className="py-2 px-2 min-w-0">
-        <div className="truncate font-medium">{song.server_filename}</div>
+      <td className="py-2 px-2 overflow-hidden">
+        <div className="truncate font-medium" title={song.server_filename}>{song.server_filename}</div>
         <div className="text-xs text-muted-foreground truncate">
           {new Date(song.server_mtime * 1000).toLocaleDateString()}
         </div>
       </td>
-      <td className="w-16 text-right py-2 text-sm text-muted-foreground">
+      <td className="py-2 px-2 text-center text-sm text-muted-foreground w-16">
         {formatDuration(song.duration)}
       </td>
-      <td className="w-28 text-right py-2 text-sm text-muted-foreground">
+      <td className="py-2 px-2 text-right text-sm text-muted-foreground w-20">
         {formatFileSize(song.size)}
       </td>
-      <td className="w-10 text-center py-2">
+      <td className="py-2 px-2 text-center w-8">
         <Button
           variant="ghost"
           size="icon"
@@ -88,6 +88,7 @@ export const SongList: React.FC = () => {
   const addRecentSong = usePlayerStore(state => state.addRecentSong);
   const removeRecentSong = usePlayerStore(state => state.removeRecentSong);
   const setIsPlaying = usePlayerStore(state => state.setIsPlaying);
+  const updatePlaylist = usePlayerStore(state => state.updatePlaylist);
 
   // 获取当前显示的歌曲列表
   const getSongs = (): PlaylistItem[] => {
@@ -129,8 +130,17 @@ export const SongList: React.FC = () => {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <table className="w-full">
+    <div className="flex-1 overflow-y-auto overflow-x-hidden">
+      <table className="w-full border-collapse table-fixed">
+        <thead className="sticky top-0 bg-background border-b z-10">
+          <tr className="text-sm text-muted-foreground">
+            <th className="w-12 py-2 px-2 text-center font-medium">#</th>
+            <th className="py-2 px-2 text-left font-medium" style={{ width: 'calc(100% - 14rem)' }}>标题</th>
+            <th className="w-16 py-2 px-2 text-center font-medium">时长</th>
+            <th className="w-20 py-2 px-2 text-right font-medium">大小</th>
+            <th className="w-8 py-2 px-2"></th>
+          </tr>
+        </thead>
         <tbody>
           {songs.map((song, index) => (
             <SongRow
