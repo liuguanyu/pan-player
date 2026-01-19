@@ -137,8 +137,14 @@ function createWindow() {
       // 切换到迷你模式
       mainWindow.setTitle('mini-player-mode');
 
+      // 先解除大小限制，防止 setSize 被当前的 minimumSize 阻挡
+      mainWindow.setMinimumSize(1, 1);
+      mainWindow.setMaximumSize(9999, 9999);
+      
       // 设置为迷你窗口大小
       mainWindow.setSize(300, 100);
+      
+      // 锁定大小
       mainWindow.setMinimumSize(300, 100);
       mainWindow.setMaximumSize(300, 100);
       
@@ -149,9 +155,15 @@ function createWindow() {
       mainWindow.webContents.send('mini-mode-changed', true);
     } else {
       // 恢复正常模式
-      mainWindow.setMinimumSize(800, 600);
+      // 先解除大小限制
+      mainWindow.setMinimumSize(1, 1);
       mainWindow.setMaximumSize(9999, 9999);
+      
+      // 恢复大小
       mainWindow.setSize(1200, 800);
+      
+      // 设置正常模式的最小限制
+      mainWindow.setMinimumSize(800, 600);
       
       // 取消置顶
       mainWindow.setAlwaysOnTop(false);
