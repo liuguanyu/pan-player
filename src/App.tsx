@@ -86,8 +86,9 @@ const App: React.FC = () => {
           <div className="h-10 border-b flex items-center px-4 text-sm font-medium text-muted-foreground">
             <div className="w-12 text-center">#</div>
             <div className="flex-1">标题</div>
-            <div className="w-24 text-right">时长</div>
-            <div className="w-32 text-right">大小</div>
+            <div className="w-16 text-right">时长</div>
+            <div className="w-28 text-right">大小</div>
+            <div className="w-10"></div>
           </div>
           
           {/* Song List Body */}

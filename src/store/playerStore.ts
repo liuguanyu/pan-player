@@ -46,6 +46,7 @@ interface PlayerState {
   removePlaylist: (name: string) => void;
   updatePlaylist: (playlist: Playlist) => void;
   setCurrentPlaylist: (name: string) => void;
+  updatePlaylistItemDuration: (fs_id: number, duration: number) => void;
   
   // 最近播放方法
   addRecentSong: (song: PlaylistItem) => void;
@@ -212,6 +213,14 @@ export const usePlayerStore = create<PlayerState>()(
         playlists: state.playlists.map(p => p.name === playlist.name ? playlist : p)
       })),
       setCurrentPlaylist: (name) => set({ currentPlaylist: name }),
+      updatePlaylistItemDuration: (fs_id, duration) => set((state) => ({
+        playlists: state.playlists.map(playlist => ({
+          ...playlist,
+          items: playlist.items.map(item =>
+            item.fs_id === fs_id ? { ...item, duration } : item
+          )
+        }))
+      })),
       
       // 最近播放方法
       addRecentSong: (song) => set((state) => {

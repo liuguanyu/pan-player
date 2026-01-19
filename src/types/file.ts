@@ -35,6 +35,7 @@ export interface PlaylistItem {
   add_time: number;
   dlink?: string; // 缓存的下载链接
   dlink_expires_at?: number; // 链接过期时间
+  duration?: number; // 歌曲时长（秒）
 }
 
 export interface Playlist {

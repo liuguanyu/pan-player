@@ -15,6 +15,15 @@ const formatFileSize = (bytes: number): string => {
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
 };
 
+const formatDuration = (seconds: number | undefined): string => {
+  if (!seconds || seconds <= 0) return '--:--';
+  
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
 // 单个歌曲行组件 - 使用 memo 优化性能
 const SongRow = memo(({
   song,
@@ -40,17 +49,16 @@ const SongRow = memo(({
       <td className="w-12 text-center py-2 text-sm text-muted-foreground">
         {isPlaying ? '▶' : index + 1}
       </td>
-      <td className="flex-1 py-2 px-2">
+      <td className="py-2 px-2 min-w-0">
         <div className="truncate font-medium">{song.server_filename}</div>
         <div className="text-xs text-muted-foreground truncate">
           {new Date(song.server_mtime * 1000).toLocaleDateString()}
         </div>
       </td>
-      <td className="w-24 text-right py-2 px-2 text-sm text-muted-foreground">
-        {/* 时长暂时显示为 -- */}
-        --:--
+      <td className="w-16 text-right py-2 text-sm text-muted-foreground">
+        {formatDuration(song.duration)}
       </td>
-      <td className="w-32 text-right py-2 px-4 text-sm text-muted-foreground">
+      <td className="w-28 text-right py-2 text-sm text-muted-foreground">
         {formatFileSize(song.size)}
       </td>
       <td className="w-10 text-center py-2">

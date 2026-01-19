@@ -14,7 +14,8 @@ export const BackgroundAudio: React.FC = () => {
     setCurrentTime,
     setDuration,
     playNext,
-    setParsedLyrics
+    setParsedLyrics,
+    updatePlaylistItemDuration
   } = usePlayerStore();
   
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -170,8 +171,9 @@ export const BackgroundAudio: React.FC = () => {
       baiduAPI.getDownloadLink(currentSong.fs_id).then(downloadLink => {
         if (downloadLink && audioRef.current) {
           audioRef.current.src = downloadLink;
-          // 重置进度
+          // 重置进度和时长
           setCurrentTime(0);
+          setDuration(0);
           
           // 如果是切换歌曲，且原本就是播放状态，则应该自动播放
           if (isPlaying) {
@@ -279,7 +281,13 @@ export const BackgroundAudio: React.FC = () => {
       crossOrigin="anonymous"
       onLoadedMetadata={() => {
         if (audioRef.current) {
-          setDuration(audioRef.current.duration);
+          const duration = audioRef.current.duration;
+          setDuration(duration);
+          
+          // 更新播放列表中歌曲的时长
+          if (currentSong && duration && isFinite(duration)) {
+            updatePlaylistItemDuration(currentSong.fs_id, duration);
+          }
         }
       }}
       onTimeUpdate={handleTimeUpdate}
