@@ -44,7 +44,7 @@ export const MiniPlayer: React.FC = () => {
 
   return (
     <div
-      className="relative w-full h-full bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-between px-4 overflow-hidden"
+      className="relative w-full h-full bg-gradient-to-r from-blue-900 via-blue-800 to-gray-100 flex items-center justify-between px-4 overflow-hidden"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
