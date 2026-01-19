@@ -135,8 +135,6 @@ function createWindow() {
 
     if (isMini) {
       // 切换到迷你模式
-      mainWindow.setTitle('mini-player-mode');
-
       // 先解除大小限制，防止 setSize 被当前的 minimumSize 阻挡
       mainWindow.setMinimumSize(1, 1);
       mainWindow.setMaximumSize(9999, 9999);
