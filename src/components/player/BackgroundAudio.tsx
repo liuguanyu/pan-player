@@ -12,7 +12,6 @@ export const BackgroundAudio: React.FC = () => {
     currentSong,
     setIsPlaying,
     setCurrentTime,
-    setVolume,
     playNext
   } = usePlayerStore();
   

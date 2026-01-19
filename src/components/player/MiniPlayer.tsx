@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, SkipBack, SkipForward, Maximize2, Volume2, Heart } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Maximize2 } from 'lucide-react';
 import { getCurrentLyricIndex } from '@/lib/lrc-parser';
 
 export const MiniPlayer: React.FC = () => {

@@ -2,15 +2,13 @@ import React, { useEffect, useRef } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
 import { parseLRC, getCurrentLyricIndex, LyricLine } from '@/lib/lrc-parser';
 import { Button } from '@/components/ui/button';
-import { Upload, X, Loader2 } from 'lucide-react';
-import { baiduAPI } from '@/services/baidu-api.service';
-
+import { Upload, X } from 'lucide-react';
 interface LyricsDisplayProps {
   onClose: () => void;
 }
 
 export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
-  const { currentSong, currentTime, parsedLyrics, setParsedLyrics } = usePlayerStore();
+  const { currentTime, parsedLyrics, setParsedLyrics } = usePlayerStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const [lyrics, setLyrics] = React.useState<LyricLine[]>(parsedLyrics || []);
   const [currentIndex, setCurrentIndex] = React.useState(-1);
