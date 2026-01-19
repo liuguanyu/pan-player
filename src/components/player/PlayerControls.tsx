@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { usePlayerStore } from '@/store/playerStore';
@@ -11,7 +11,8 @@ interface PlayerControlsProps {
   onToggleLyrics?: () => void;
 }
 
-const PlayerControls: React.FC<PlayerControlsProps> = ({ onToggleLyrics }) => {
+// 使用 memo 包装 PlayerControls 组件，避免不必要的重渲染
+const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) => {
   const { userInfo, logout } = useAuth();
   const {
     isPlaying,
@@ -218,6 +219,9 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({ onToggleLyrics }) => {
         </div>
     </div>
   );
-};
+});
+
+// 为 memo 组件设置显示名称
+PlayerControls.displayName = 'PlayerControls';
 
 export default PlayerControls;

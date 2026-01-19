@@ -12,10 +12,14 @@ export const BackgroundAudio: React.FC = () => {
     currentSong,
     setIsPlaying,
     setCurrentTime,
-    playNext
+    setDuration,
+    playNext,
+    setParsedLyrics
   } = usePlayerStore();
   
   const audioRef = useRef<HTMLAudioElement>(null);
+  const lastCurrentTimeRef = useRef<number>(0);
+  const isSeekingRef = useRef<boolean>(false);
   
   // 处理音频可以播放
   const handleCanPlay = () => {
@@ -32,10 +36,15 @@ export const BackgroundAudio: React.FC = () => {
     }
   };
   
-  // 处理播放时间更新
+  // 处理播放时间更新 - 优化性能，减少不必要的状态更新
   const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      setCurrentTime(audioRef.current.currentTime);
+    if (audioRef.current && !isSeekingRef.current) {
+      const newTime = audioRef.current.currentTime;
+      // 只有当时间变化超过0.5秒时才更新状态，减少频繁更新
+      if (Math.abs(newTime - lastCurrentTimeRef.current) > 0.5) {
+        setCurrentTime(newTime);
+        lastCurrentTimeRef.current = newTime;
+      }
     }
   };
   
@@ -153,6 +162,10 @@ export const BackgroundAudio: React.FC = () => {
   // 当前歌曲变化时，加载新的音频
   useEffect(() => {
     if (currentSong && audioRef.current) {
+      // 重置进度跟踪
+      lastCurrentTimeRef.current = 0;
+      isSeekingRef.current = false;
+      
       // 获取下载链接
       baiduAPI.getDownloadLink(currentSong.fs_id).then(downloadLink => {
         if (downloadLink && audioRef.current) {
@@ -162,14 +175,22 @@ export const BackgroundAudio: React.FC = () => {
           
           // 如果是切换歌曲，且原本就是播放状态，则应该自动播放
           if (isPlaying) {
-            setIsPlaying(true);
+            // 不需要再次调用 setIsPlaying(true)，因为状态已经是 true
+            const playPromise = audioRef.current.play();
+            if (playPromise !== undefined) {
+              playPromise.catch(error => {
+                if (error.name !== 'AbortError') {
+                  console.error('播放失败:', error);
+                }
+              });
+            }
           }
         }
       }).catch(error => {
         console.error('获取下载链接失败:', error);
       });
     }
-  }, [currentSong]);
+  }, [currentSong, isPlaying, setCurrentTime]);
   
   // 当播放状态变化时，控制音频播放/暂停
   useEffect(() => {
@@ -196,10 +217,15 @@ export const BackgroundAudio: React.FC = () => {
     }
   }, [volume]);
   
-  // 当进度变化时，更新音频进度
+  // 当进度变化时，更新音频进度 - 优化性能
   useEffect(() => {
     if (audioRef.current && Math.abs(audioRef.current.currentTime - currentTime) > 0.1) {
+      isSeekingRef.current = true;
       audioRef.current.currentTime = currentTime;
+      // 延迟重置 isSeeking 状态，避免时间更新冲突
+      setTimeout(() => {
+        isSeekingRef.current = false;
+      }, 100);
     }
   }, [currentTime]);
   
@@ -208,7 +234,7 @@ export const BackgroundAudio: React.FC = () => {
     const loadAutoLyrics = async () => {
       if (!currentSong) {
         // 如果没有歌曲，清空歌词
-        usePlayerStore.getState().setParsedLyrics(null);
+        setParsedLyrics(null);
         return;
       }
       
@@ -226,25 +252,25 @@ export const BackgroundAudio: React.FC = () => {
           // 解析LRC歌词
           const parsed = parseLRC(lrcContent);
           if (parsed.length > 0) {
-            usePlayerStore.getState().setParsedLyrics(parsed);
+            setParsedLyrics(parsed);
             console.log('歌词加载成功，共', parsed.length, '行');
           } else {
             console.log('LRC文件为空或格式不正确');
-            usePlayerStore.getState().setParsedLyrics(null);
+            setParsedLyrics(null);
           }
         } else {
           console.log('未找到LRC文件:', lrcPath);
-          usePlayerStore.getState().setParsedLyrics(null);
+          setParsedLyrics(null);
         }
       } catch (error) {
         console.error('自动加载歌词失败:', error);
-        usePlayerStore.getState().setParsedLyrics(null);
+        setParsedLyrics(null);
       }
     };
     
     // 当歌曲变化时触发加载歌词
     loadAutoLyrics();
-  }, [currentSong?.fs_id]); // 使用 fs_id 作为依赖，确保歌曲真正改变时才触发
+  }, [currentSong?.fs_id, setParsedLyrics]); // 使用 fs_id 作为依赖，确保歌曲真正改变时才触发
   
   return (
     <audio
@@ -253,7 +279,7 @@ export const BackgroundAudio: React.FC = () => {
       crossOrigin="anonymous"
       onLoadedMetadata={() => {
         if (audioRef.current) {
-          usePlayerStore.getState().setDuration(audioRef.current.duration);
+          setDuration(audioRef.current.duration);
         }
       }}
       onTimeUpdate={handleTimeUpdate}

@@ -7,7 +7,12 @@ import { playlistService } from '@/services/playlist.service';
 import { useAuth } from '@/hooks/useAuth';
 
 export const PlaylistSidebar: React.FC = () => {
-  const { playlists, currentPlaylist, setCurrentPlaylist, recentSongs, setShowLyrics } = usePlayerStore();
+  // 优化状态选择，只订阅需要的状态
+  const playlists = usePlayerStore(state => state.playlists);
+  const currentPlaylist = usePlayerStore(state => state.currentPlaylist);
+  const setCurrentPlaylist = usePlayerStore(state => state.setCurrentPlaylist);
+  const recentSongs = usePlayerStore(state => state.recentSongs);
+  const setShowLyrics = usePlayerStore(state => state.setShowLyrics);
   const { isAuthenticated } = useAuth();
   const [showAddDialog, setShowAddDialog] = useState(false);
 

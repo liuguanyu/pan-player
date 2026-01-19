@@ -9,7 +9,10 @@ import { LyricsDisplay } from '@/components/lyrics/LyricsDisplay';
 import { usePlayerStore } from '@/store/playerStore';
 
 const App: React.FC = () => {
-  const { showLyrics, setShowLyrics } = usePlayerStore();
+  // 优化状态选择，避免不必要的重渲染
+  // 只选择需要的状态
+  const showLyrics = usePlayerStore(state => state.showLyrics);
+  const setShowLyrics = usePlayerStore(state => state.setShowLyrics);
   const [isMiniMode, setIsMiniMode] = useState(false);
 
   // 监听迷你模式变化（通过 IPC 事件）

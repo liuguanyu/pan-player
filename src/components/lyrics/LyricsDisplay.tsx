@@ -12,33 +12,46 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [lyrics, setLyrics] = React.useState<LyricLine[]>(parsedLyrics || []);
   const [currentIndex, setCurrentIndex] = React.useState(-1);
+  const lastScrollIndexRef = useRef(-1);
 
   // 当 store 中的 parsedLyrics 变化时，更新本地状态
   useEffect(() => {
     setLyrics(parsedLyrics || []);
+    lastScrollIndexRef.current = -1; // 重置滚动索引
   }, [parsedLyrics]);
 
-  // 根据当前播放时间更新当前歌词索引
+  // 根据当前播放时间更新当前歌词索引 - 优化性能，减少计算频率
   useEffect(() => {
     if (lyrics.length > 0) {
       const index = getCurrentLyricIndex(lyrics, currentTime);
-      setCurrentIndex(index);
-    }
-  }, [currentTime, lyrics]);
-
-  // 自动滚动到当前歌词
-  useEffect(() => {
-    if (currentIndex >= 0 && containerRef.current) {
-      // 获取歌词容器（containerRef.current.children[0] 是内部的 max-w-2xl div）
-      const lyricsContainer = containerRef.current.children[0];
-      const currentElement = lyricsContainer.children[currentIndex] as HTMLElement;
-      
-      if (currentElement) {
-        currentElement.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center'
-        });
+      // 只有当索引真正变化时才更新状态
+      if (index !== currentIndex) {
+        setCurrentIndex(index);
       }
+    }
+  }, [currentTime, lyrics, currentIndex]);
+
+  // 自动滚动到当前歌词 - 优化性能，只在索引变化时滚动
+  useEffect(() => {
+    // 只有当索引变化时才滚动，避免频繁的 DOM 操作
+    if (currentIndex >= 0 && currentIndex !== lastScrollIndexRef.current && containerRef.current) {
+      lastScrollIndexRef.current = currentIndex;
+      
+      // 使用 requestAnimationFrame 来优化滚动性能
+      requestAnimationFrame(() => {
+        if (!containerRef.current) return;
+        
+        // 获取歌词容器（containerRef.current.children[0] 是内部的 max-w-2xl div）
+        const lyricsContainer = containerRef.current.children[0];
+        const currentElement = lyricsContainer.children[currentIndex] as HTMLElement;
+        
+        if (currentElement) {
+          currentElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+          });
+        }
+      });
     }
   }, [currentIndex]);
 

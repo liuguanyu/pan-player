@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
 import { PlaylistItem } from '@/types/file';
 import { Button } from '@/components/ui/button';
@@ -15,17 +15,71 @@ const formatFileSize = (bytes: number): string => {
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
 };
 
+// 单个歌曲行组件 - 使用 memo 优化性能
+const SongRow = memo(({
+  song,
+  index,
+  isPlaying,
+  onDoubleClick,
+  onRemove
+}: {
+  song: PlaylistItem;
+  index: number;
+  isPlaying: boolean;
+  onDoubleClick: (song: PlaylistItem) => void;
+  onRemove: (e: React.MouseEvent, song: PlaylistItem) => void;
+}) => {
+  return (
+    <tr
+      key={song.fs_id}
+      className={`group border-b hover:bg-accent/50 cursor-pointer transition-colors ${
+        isPlaying ? 'bg-accent' : ''
+      }`}
+      onDoubleClick={() => onDoubleClick(song)}
+    >
+      <td className="w-12 text-center py-2 text-sm text-muted-foreground">
+        {isPlaying ? '▶' : index + 1}
+      </td>
+      <td className="flex-1 py-2 px-2">
+        <div className="truncate font-medium">{song.server_filename}</div>
+        <div className="text-xs text-muted-foreground truncate">
+          {new Date(song.server_mtime * 1000).toLocaleDateString()}
+        </div>
+      </td>
+      <td className="w-24 text-right py-2 px-2 text-sm text-muted-foreground">
+        {/* 时长暂时显示为 -- */}
+        --:--
+      </td>
+      <td className="w-32 text-right py-2 px-4 text-sm text-muted-foreground">
+        {formatFileSize(song.size)}
+      </td>
+      <td className="w-10 text-center py-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={(e) => onRemove(e, song)}
+          title="从列表移除"
+        >
+          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+        </Button>
+      </td>
+    </tr>
+  );
+});
+
+SongRow.displayName = 'SongRow';
+
 export const SongList: React.FC = () => {
-  const {
-    playlists,
-    currentPlaylist,
-    recentSongs,
-    currentSong,
-    setCurrentSong,
-    addRecentSong,
-    removeRecentSong,
-    setIsPlaying
-  } = usePlayerStore();
+  // 优化状态选择，只订阅需要的状态
+  const playlists = usePlayerStore(state => state.playlists);
+  const currentPlaylist = usePlayerStore(state => state.currentPlaylist);
+  const recentSongs = usePlayerStore(state => state.recentSongs);
+  const currentSong = usePlayerStore(state => state.currentSong);
+  const setCurrentSong = usePlayerStore(state => state.setCurrentSong);
+  const addRecentSong = usePlayerStore(state => state.addRecentSong);
+  const removeRecentSong = usePlayerStore(state => state.removeRecentSong);
+  const setIsPlaying = usePlayerStore(state => state.setIsPlaying);
 
   // 获取当前显示的歌曲列表
   const getSongs = (): PlaylistItem[] => {
@@ -71,41 +125,14 @@ export const SongList: React.FC = () => {
       <table className="w-full">
         <tbody>
           {songs.map((song, index) => (
-            <tr
+            <SongRow
               key={song.fs_id}
-              className={`group border-b hover:bg-accent/50 cursor-pointer transition-colors ${
-                currentSong?.fs_id === song.fs_id ? 'bg-accent' : ''
-              }`}
-              onDoubleClick={() => handleSongDoubleClick(song)}
-            >
-              <td className="w-12 text-center py-2 text-sm text-muted-foreground">
-                {currentSong?.fs_id === song.fs_id ? '▶' : index + 1}
-              </td>
-              <td className="flex-1 py-2 px-2">
-                <div className="truncate font-medium">{song.server_filename}</div>
-                <div className="text-xs text-muted-foreground truncate">
-                  {new Date(song.server_mtime * 1000).toLocaleDateString()}
-                </div>
-              </td>
-              <td className="w-24 text-right py-2 px-2 text-sm text-muted-foreground">
-                {/* 时长暂时显示为 -- */}
-                --:--
-              </td>
-              <td className="w-32 text-right py-2 px-4 text-sm text-muted-foreground">
-                {formatFileSize(song.size)}
-              </td>
-              <td className="w-10 text-center py-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => handleRemoveSong(e, song)}
-                  title="从列表移除"
-                >
-                  <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                </Button>
-              </td>
-            </tr>
+              song={song}
+              index={index}
+              isPlaying={currentSong?.fs_id === song.fs_id}
+              onDoubleClick={handleSongDoubleClick}
+              onRemove={handleRemoveSong}
+            />
           ))}
         </tbody>
       </table>
