@@ -101,6 +101,10 @@ function createWindow() {
     },
   });
 
+  // 隐藏菜单栏
+  mainWindow.setMenu(null);
+  Menu.setApplicationMenu(null);
+
   // 开发环境加载Vite服务器，生产环境加载构建文件
   if (process.env.NODE_ENV === 'development') {
     // 尝试连接到Vite开发服务器
