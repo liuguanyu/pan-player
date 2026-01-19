@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
 import { PlaylistItem } from '@/types/file';
 import { Button } from '@/components/ui/button';
@@ -30,16 +30,19 @@ const SongRow = memo(({
   index,
   isPlaying,
   onDoubleClick,
-  onRemove
+  onRemove,
+  rowRef
 }: {
   song: PlaylistItem;
   index: number;
   isPlaying: boolean;
   onDoubleClick: (song: PlaylistItem) => void;
   onRemove: (e: React.MouseEvent, song: PlaylistItem) => void;
+  rowRef?: React.RefObject<HTMLTableRowElement>;
 }) => {
   return (
     <tr
+      ref={rowRef}
       key={song.fs_id}
       className={`group border-b hover:bg-accent/50 cursor-pointer transition-colors ${
         isPlaying ? 'bg-accent' : ''
@@ -90,6 +93,10 @@ export const SongList: React.FC = () => {
   const setIsPlaying = usePlayerStore(state => state.setIsPlaying);
   const updatePlaylist = usePlayerStore(state => state.updatePlaylist);
 
+  // 用于引用当前播放歌曲的行元素
+  const currentSongRowRef = useRef<HTMLTableRowElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   // 获取当前显示的歌曲列表
   const getSongs = (): PlaylistItem[] => {
     if (currentPlaylist === 'recent') {
@@ -101,6 +108,32 @@ export const SongList: React.FC = () => {
   };
 
   const songs = getSongs();
+
+  // 当当前歌曲变化时，自动滚动到视口
+  useEffect(() => {
+    if (currentSongRowRef.current && containerRef.current) {
+      const row = currentSongRowRef.current;
+      const container = containerRef.current;
+      
+      // 获取行和容器的位置信息
+      const rowRect = row.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      
+      // 检查行是否在视口内
+      const isVisible =
+        rowRect.top >= containerRect.top &&
+        rowRect.bottom <= containerRect.bottom;
+      
+      // 如果不在视口内，滚动到视口中心
+      if (!isVisible) {
+        const scrollTop = row.offsetTop - container.offsetTop - (container.clientHeight / 2) + (row.clientHeight / 2);
+        container.scrollTo({
+          top: scrollTop,
+          behavior: 'smooth'
+        });
+      }
+    }
+  }, [currentSong?.fs_id]);
 
   // 双击播放歌曲
   const handleSongDoubleClick = (song: PlaylistItem) => {
@@ -130,7 +163,7 @@ export const SongList: React.FC = () => {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto overflow-x-hidden">
+    <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
       <table className="w-full border-collapse table-fixed">
         <thead className="sticky top-0 bg-background border-b z-10">
           <tr className="text-sm text-muted-foreground">
@@ -142,16 +175,20 @@ export const SongList: React.FC = () => {
           </tr>
         </thead>
         <tbody>
-          {songs.map((song, index) => (
-            <SongRow
-              key={song.fs_id}
-              song={song}
-              index={index}
-              isPlaying={currentSong?.fs_id === song.fs_id}
-              onDoubleClick={handleSongDoubleClick}
-              onRemove={handleRemoveSong}
-            />
-          ))}
+          {songs.map((song, index) => {
+            const isPlaying = currentSong?.fs_id === song.fs_id;
+            return (
+              <SongRow
+                key={song.fs_id}
+                song={song}
+                index={index}
+                isPlaying={isPlaying}
+                onDoubleClick={handleSongDoubleClick}
+                onRemove={handleRemoveSong}
+                rowRef={isPlaying ? currentSongRowRef : undefined}
+              />
+            );
+          })}
         </tbody>
       </table>
     </div>
