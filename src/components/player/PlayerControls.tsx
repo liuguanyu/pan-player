@@ -83,7 +83,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
         <div className="flex items-center justify-between mb-2">
           <div className="flex-1 overflow-hidden">
             <h2
-              className="text-lg font-semibold whitespace-nowrap"
+              className="text-lg font-semibold whitespace-nowrap text-white drop-shadow-md"
               style={{
                 animation: currentSong && currentSong.server_filename.length > 20 ? 'scroll 10s linear infinite' : 'none'
               }}
@@ -98,11 +98,11 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
             `}</style>
           </div>
           
-          <div className="flex items-center space-x-4 mx-4">
+          <div className="flex items-center space-x-4 mx-4 text-white">
             <Button
               variant="ghost"
               size="icon"
-              className="h-10 w-10"
+              className="h-10 w-10 text-white hover:text-white/80 hover:bg-white/10"
               onClick={playPrevious}
               disabled={!currentSong}
             >
@@ -111,7 +111,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
             <Button
               variant="ghost"
               size="icon"
-              className="h-14 w-14"
+              className="h-14 w-14 text-white hover:text-white/80 hover:bg-white/10"
               onClick={togglePlayPause}
               disabled={!currentSong}
             >
@@ -124,7 +124,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
             <Button
               variant="ghost"
               size="icon"
-              className="h-10 w-10"
+              className="h-10 w-10 text-white hover:text-white/80 hover:bg-white/10"
               onClick={playNext}
               disabled={!currentSong}
             >
@@ -132,10 +132,10 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
             </Button>
           </div>
           
-          <div className="flex justify-end items-center space-x-2">
+          <div className="flex justify-end items-center space-x-2 bg-black/20 px-3 py-1 rounded-lg backdrop-blur-sm">
             {userInfo && (
               <>
-                <span className="text-sm text-muted-foreground">
+                <span className="text-sm text-white font-medium">
                   {userInfo.netdisk_name || userInfo.baidu_name}
                 </span>
                 <Button
@@ -143,6 +143,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
                   size="icon"
                   onClick={logout}
                   title="退出登录"
+                  className="text-white hover:text-white/80 hover:bg-white/10"
                 >
                   <LogOut className="h-4 w-4" />
                 </Button>
@@ -153,7 +154,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
         
         {/* 进度条和音量控制 */}
         <div className="flex items-center space-x-4">
-          <span className="text-xs text-muted-foreground w-10 text-right">
+          <span className="text-xs text-white/80 w-10 text-right font-medium">
             {formattedCurrentTime}
           </span>
           
@@ -166,11 +167,11 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
             disabled={!currentSong}
           />
           
-          <span className="text-xs text-muted-foreground w-10">
+          <span className="text-xs text-white/80 w-10 font-medium">
             {formattedDuration}
           </span>
           
-          <div className="w-32 flex items-center space-x-2">
+          <div className="w-32 flex items-center space-x-2 text-white/90">
             <span className="text-xs">🔊</span>
             <Slider
               value={[volume]}
@@ -184,7 +185,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-8 w-8 text-white hover:text-white/80 hover:bg-white/10"
             onClick={onToggleLyrics}
             title="显示歌词"
             disabled={!currentSong}
@@ -195,7 +196,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-8 w-8 text-white hover:text-white/80 hover:bg-white/10"
             onClick={togglePlaybackMode}
             title={playbackModeTitles[playbackMode]}
           >
@@ -205,7 +206,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-8 w-8 text-white hover:text-white/80 hover:bg-white/10"
             onClick={() => {
               if (window.electronAPI && window.electronAPI.toggleMiniMode) {
                 window.electronAPI.toggleMiniMode(true);

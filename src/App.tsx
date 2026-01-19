@@ -57,7 +57,7 @@ const App: React.FC = () => {
       <LoginDialog />
 
       {/* Header / Player Area */}
-      <header className="border-b h-[120px] flex-shrink-0 bg-card z-10">
+      <header className="border-b h-[120px] flex-shrink-0 bg-gradient-to-r from-blue-900 via-blue-800 to-gray-100 z-10">
         <div className="container h-full px-4 py-2">
           <PlayerControls onToggleLyrics={() => setShowLyrics(!showLyrics)} />
         </div>
