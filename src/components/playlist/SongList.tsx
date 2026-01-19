@@ -38,7 +38,7 @@ const SongRow = memo(({
   isPlaying: boolean;
   onDoubleClick: (song: PlaylistItem) => void;
   onRemove: (e: React.MouseEvent, song: PlaylistItem) => void;
-  rowRef?: React.RefObject<HTMLTableRowElement>;
+  rowRef?: React.Ref<HTMLTableRowElement>;
 }) => {
   return (
     <tr
@@ -94,7 +94,7 @@ export const SongList: React.FC = () => {
   const updatePlaylist = usePlayerStore(state => state.updatePlaylist);
 
   // 用于引用当前播放歌曲的行元素
-  const currentSongRowRef = useRef<HTMLTableRowElement | null>(null);
+  const currentSongRowRef = useRef<HTMLTableRowElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // 获取当前显示的歌曲列表

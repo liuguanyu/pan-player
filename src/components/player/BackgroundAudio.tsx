@@ -167,30 +167,86 @@ export const BackgroundAudio: React.FC = () => {
       lastCurrentTimeRef.current = 0;
       isSeekingRef.current = false;
       
-      // 获取下载链接
-      baiduAPI.getDownloadLink(currentSong.fs_id).then(downloadLink => {
-        if (downloadLink && audioRef.current) {
-          audioRef.current.src = downloadLink;
-          // 重置进度和时长
-          setCurrentTime(0);
-          setDuration(0);
+      // 检查是否需要预转码（ALAC等不支持的格式）
+      const needsPreConversion = () => {
+        if (!currentSong) return false;
+        
+        // 获取文件扩展名
+        const filename = currentSong.server_filename.toLowerCase();
+        const ext = filename.split('.').pop();
+        
+        // ALAC 文件通常使用 .m4a 扩展名，但我们需要检查是否需要转码
+        // 对于已知的不支持格式，直接进行转码
+        const unsupportedFormats = ['alac', 'flac', 'ape', 'wav'];
+        return unsupportedFormats.includes(ext || '') ||
+               (ext === 'm4a' && currentSong.size > 10000000); // 大于10MB的m4a文件可能包含ALAC
+      };
+      
+      if (needsPreConversion()) {
+        // 直接进行转码
+        console.log('检测到可能不支持的音频格式，预转码中...');
+        
+        baiduAPI.getDownloadLink(currentSong.fs_id).then(downloadLink => {
+          if (!downloadLink) {
+            throw new Error('无法获取下载链接');
+          }
           
-          // 如果是切换歌曲，且原本就是播放状态，则应该自动播放
-          if (isPlaying) {
-            // 不需要再次调用 setIsPlaying(true)，因为状态已经是 true
-            const playPromise = audioRef.current.play();
-            if (playPromise !== undefined) {
-              playPromise.catch(error => {
-                if (error.name !== 'AbortError') {
-                  console.error('播放失败:', error);
-                }
-              });
+          return audioConverter.convertToPlayableFormat(
+            downloadLink,
+            currentSong.server_filename
+          );
+        }).then(convertedUrl => {
+          if (audioRef.current) {
+            audioRef.current.src = convertedUrl;
+            // 重置进度和时长
+            setCurrentTime(0);
+            setDuration(0);
+            
+            // 如果是切换歌曲，且原本就是播放状态，则应该自动播放
+            if (isPlaying) {
+              const playPromise = audioRef.current.play();
+              if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                  if (error.name !== 'AbortError') {
+                    console.error('播放失败:', error);
+                  }
+                });
+              }
             }
           }
-        }
-      }).catch(error => {
-        console.error('获取下载链接失败:', error);
-      });
+        }).catch(error => {
+          console.error('预转码失败:', error);
+          // 转码失败则跳到下一首
+          setTimeout(() => {
+            playNext();
+          }, 3000);
+        });
+      } else {
+        // 正常加载
+        baiduAPI.getDownloadLink(currentSong.fs_id).then(downloadLink => {
+          if (downloadLink && audioRef.current) {
+            audioRef.current.src = downloadLink;
+            // 重置进度和时长
+            setCurrentTime(0);
+            setDuration(0);
+            
+            // 如果是切换歌曲，且原本就是播放状态，则应该自动播放
+            if (isPlaying) {
+              // 不需要再次调用 setIsPlaying(true)，因为状态已经是 true
+              const playPromise = audioRef.current.play();
+              if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                  if (error.name !== 'AbortError') {
+                    console.error('播放失败:', error);
+                  }
+                });
+              }
+            }
+          }
+        }).catch(error => {
+          console.error('获取下载链接失败:', error);
+        });
+      }
     }
   }, [currentSong, isPlaying, setCurrentTime]);
   

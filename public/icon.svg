@@ -1,0 +1,28 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="skyGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4E93FC;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2A65D8;stop-opacity:1" />
+    </linearGradient>
+    <filter id="dropShadow" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="15"/>
+      <feOffset dx="0" dy="10" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.3"/>
+      </feComponentTransfer>
+      <feMerge> 
+        <feMergeNode in="offsetblur"/>
+        <feMergeNode in="SourceGraphic"/> 
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <g filter="url(#dropShadow)">
+    <!-- Cloud Shape -->
+    <path d="M389,217.2c-6.4-62.8-59.6-112-133-112c-57.4,0-106,30.4-126.6,74.6c-4.6-0.4-9.2-0.6-14-0.6c-55.2,0-100,44.8-100,100
+      s44.8,100,100,100h267c49.2,0,89-39.8,89-89C471.4,242.6,435.2,208.4,389,217.2z" fill="url(#skyGradient)"/>
+      
+    <!-- Play Button -->
+    <path d="M230,230 l90,50 l-90,50 z" fill="white"/>
+  </g>
+</svg>

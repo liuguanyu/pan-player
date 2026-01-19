@@ -56,7 +56,23 @@ class AudioConverter {
 
     if (!this.ffmpeg) throw new Error('FFmpeg not initialized');
 
-    const ext = filename.split('.').pop()?.toLowerCase() || 'm4a';
+    // 获取文件扩展名，如果无法获取则默认为 m4a
+    // 对于 ALAC 编码的文件，扩展名可能是 m4a，但也需要转换
+    let ext = filename.split('.').pop()?.toLowerCase() || 'm4a';
+    
+    // 如果文件名中没有扩展名，尝试从 URL 中获取
+    if (!filename.includes('.')) {
+      try {
+        const urlObj = new URL(url);
+        const urlExt = urlObj.pathname.split('.').pop()?.toLowerCase();
+        if (urlExt && urlExt.length < 5) {
+          ext = urlExt;
+        }
+      } catch (e) {
+        // 忽略 URL 解析错误
+      }
+    }
+    
     const inputName = `input.${ext}`;
     const outputName = 'output.mp3';
 
