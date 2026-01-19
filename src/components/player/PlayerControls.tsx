@@ -213,7 +213,6 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
               }
             }}
             title="迷你模式"
-            disabled={!currentSong}
           >
             <Minimize2 className="h-4 w-4" />
           </Button>

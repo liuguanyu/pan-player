@@ -1,5 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, powerSaveBlocker } from 'electron';
-import { IpcMainInvokeEvent } from 'electron/main';
+import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, powerSaveBlocker, IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import axios from 'axios';
 import * as fs from 'fs';
@@ -7,9 +6,12 @@ import * as fs from 'fs';
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+let configPath: string = '';
 
-// 窗口位置配置文件路径
-const configPath = path.join(app.getPath('userData'), 'window-config.json');
+// 初始化配置路径
+function initConfigPath() {
+  configPath = path.join(app.getPath('userData'), 'window-config.json');
+}
 
 // 保存窗口配置
 function saveWindowConfig(config: any) {
@@ -117,7 +119,10 @@ function createTray() {
 }
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  // 读取窗口配置
+  const config = loadWindowConfig() || {};
+  
+  const windowOptions: Electron.BrowserWindowConstructorOptions = {
     width: 1200,
     height: 800,
     webPreferences: {
@@ -125,7 +130,17 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
     },
-  });
+  };
+
+  // 如果有保存的正常模式位置，应用它
+  if (config.normalMode) {
+    windowOptions.x = config.normalMode.x;
+    windowOptions.y = config.normalMode.y;
+    windowOptions.width = config.normalMode.width;
+    windowOptions.height = config.normalMode.height;
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
 
   // 隐藏菜单栏
   mainWindow.setMenu(null);
@@ -169,14 +184,17 @@ function createWindow() {
       mainWindow.setMinimumSize(1, 1);
       mainWindow.setMaximumSize(9999, 9999);
       
-      // 保存当前正常模式的位置
+      // 保存当前正常模式的位置，同时保留现有配置
       const [x, y] = mainWindow.getPosition();
       const [width, height] = mainWindow.getSize();
+      const currentConfig = loadWindowConfig() || {};
+      
       saveWindowConfig({
+        ...currentConfig,
         normalMode: { x, y, width, height }
       });
       
-      // 读取上次迷你模式的位置
+      // 读取配置（包含刚才保存的 normalMode 和之前的 miniMode）
       const config = loadWindowConfig();
       if (config && config.miniMode) {
         // 恢复上次迷你模式的位置
@@ -381,6 +399,9 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(() => {
+  // 初始化配置路径
+  initConfigPath();
+  
   registerIpcHandlers();
 
   // 拦截所有百度相关域名的请求
