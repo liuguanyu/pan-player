@@ -70,7 +70,7 @@ const App: React.FC = () => {
 
       {/* Header / Player Area */}
       <header className="border-b h-[120px] flex-shrink-0 bg-gradient-to-r from-blue-900 via-blue-800 to-gray-100 z-10">
-        <div className="container h-full px-4 py-2">
+        <div className="h-full px-4 py-2 w-full">
           <PlayerControls onToggleLyrics={() => setShowLyrics(!showLyrics)} />
         </div>
       </header>
