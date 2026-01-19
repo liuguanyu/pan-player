@@ -173,151 +173,155 @@ function createWindow() {
   });
 }
 
-// 处理HTTP请求
-ipcMain.handle('http-request', async (_event: IpcMainInvokeEvent, config: any) => {
-  console.log('HTTP Request Config:', JSON.stringify(config, null, 2));
-  
-  try {
-    const response = await axios(config);
-    console.log('HTTP Response Status:', response.status);
-    console.log('HTTP Response Data:', JSON.stringify(response.data, null, 2));
+function registerIpcHandlers() {
+  // 处理HTTP请求
+  ipcMain.handle('http-request', async (_event: IpcMainInvokeEvent, config: any) => {
+    console.log('HTTP Request Config:', JSON.stringify(config, null, 2));
     
-    return {
-      data: response.data,
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    };
-  } catch (error: any) {
-    console.error('HTTP Request Error:', error.message);
-    if (error.response) {
-      console.error('Error Response Status:', error.response.status);
-      console.error('Error Response Data:', JSON.stringify(error.response.data, null, 2));
-    }
-    return {
-      error: true,
-      message: error.message,
-      response: error.response ? {
-        data: error.response.data,
-        status: error.response.status,
-        headers: error.response.headers,
-      } : undefined
-    };
-  }
-});
-
-// 处理下载文件请求（用于音频转换）
-ipcMain.handle('download-file', async (_event: IpcMainInvokeEvent, url: string) => {
-  console.log('下载文件:', url);
-  
-  try {
-    const response = await axios({
-      method: 'GET',
-      url,
-      responseType: 'arraybuffer',
-      headers: {
-        'User-Agent': 'pan.baidu.com',
-        'Referer': 'https://pan.baidu.com/'
-      }
-    });
-    
-    console.log('文件下载成功，大小:', response.data.byteLength);
-    
-    // 将 ArrayBuffer 转换为 Uint8Array
-    const uint8Array = new Uint8Array(response.data);
-    
-    return {
-      success: true,
-      data: Array.from(uint8Array) // 转换为普通数组以便通过 IPC 传递
-    };
-  } catch (error: any) {
-    console.error('下载文件失败:', error.message);
-    if (error.response) {
-      console.error('错误响应:', error.response.status);
-    }
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-});
-
-// 处理设备码授权轮询
-ipcMain.handle('poll-device-code', async (event: IpcMainInvokeEvent, deviceCode: string) => {
-  const params = {
-    grant_type: 'device_token',
-    code: deviceCode,
-    client_id: 'pVB2TAdcOLZiCldLEcG1dABS3OK2owVi',
-    client_secret: 'XwXk28lcgoWLVlVLEkTMFxnqwA4onOLd'
-  };
-
-  console.log('开始轮询设备码，参数:', params);
-
-  // 最多轮询60次，每次间隔5秒
-  for (let i = 0; i < 60; i++) {
     try {
-      console.log(`第 ${i + 1} 次轮询...`);
-      const response = await axios.get('https://openapi.baidu.com/oauth/2.0/token', {
-        params,
+      const response = await axios(config);
+      console.log('HTTP Response Status:', response.status);
+      console.log('HTTP Response Data:', JSON.stringify(response.data, null, 2));
+      
+      return {
+        data: response.data,
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      };
+    } catch (error: any) {
+      console.error('HTTP Request Error:', error.message);
+      if (error.response) {
+        console.error('Error Response Status:', error.response.status);
+        console.error('Error Response Data:', JSON.stringify(error.response.data, null, 2));
+      }
+      return {
+        error: true,
+        message: error.message,
+        response: error.response ? {
+          data: error.response.data,
+          status: error.response.status,
+          headers: error.response.headers,
+        } : undefined
+      };
+    }
+  });
+
+  // 处理下载文件请求（用于音频转换）
+  ipcMain.handle('download-file', async (_event: IpcMainInvokeEvent, url: string) => {
+    console.log('下载文件:', url);
+    
+    try {
+      const response = await axios({
+        method: 'GET',
+        url,
+        responseType: 'arraybuffer',
         headers: {
-          'User-Agent': 'pan.baidu.com'
+          'User-Agent': 'pan.baidu.com',
+          'Referer': 'https://pan.baidu.com/'
         }
       });
-
-      console.log('响应状态:', response.status);
-      console.log('响应数据:', response.data);
-
-      const data = response.data;
-
-      // 授权成功
-      if (data.access_token) {
-        console.log('授权成功！');
-        // 通知渲染进程授权成功
-        event.sender.send('auth-success', data);
-        return { success: true, data };
-      }
-
-      // 授权过期
-      if (data.error === 'expired_token') {
-        console.error('授权已过期');
-        return { success: false, error: 'expired_token' };
-      }
-
-      // 其他错误
-      if (data.error && data.error !== 'authorization_pending') {
-        console.error('设备码授权失败:', data);
-        return { success: false, error: data.error };
-      }
-
-      // 等待用户授权
-      if (data.error === 'authorization_pending') {
-        console.log('等待用户授权...');
-      }
-
-      // 等待5秒后继续轮询
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      
+      console.log('文件下载成功，大小:', response.data.byteLength);
+      
+      // 将 ArrayBuffer 转换为 Uint8Array
+      const uint8Array = new Uint8Array(response.data);
+      
+      return {
+        success: true,
+        data: Array.from(uint8Array) // 转换为普通数组以便通过 IPC 传递
+      };
     } catch (error: any) {
-      // 特殊处理 authorization_pending 错误
-      if (error.response && error.response.data && error.response.data.error === 'authorization_pending') {
-        console.log('等待用户授权...');
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-        continue;
-      }
-
-      console.error('设备码授权失败:', error.message);
+      console.error('下载文件失败:', error.message);
       if (error.response) {
-        console.error('错误响应:', error.response.status, error.response.data);
+        console.error('错误响应:', error.response.status);
       }
-      // 继续轮询而不是退出
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      return {
+        success: false,
+        error: error.message
+      };
     }
-  }
+  });
 
-  console.error('设备码授权超时');
-  return { success: false, error: 'timeout' };
-});
+  // 处理设备码授权轮询
+  ipcMain.handle('poll-device-code', async (event: IpcMainInvokeEvent, deviceCode: string) => {
+    const params = {
+      grant_type: 'device_token',
+      code: deviceCode,
+      client_id: 'pVB2TAdcOLZiCldLEcG1dABS3OK2owVi',
+      client_secret: 'XwXk28lcgoWLVlVLEkTMFxnqwA4onOLd'
+    };
+
+    console.log('开始轮询设备码，参数:', params);
+
+    // 最多轮询60次，每次间隔5秒
+    for (let i = 0; i < 60; i++) {
+      try {
+        console.log(`第 ${i + 1} 次轮询...`);
+        const response = await axios.get('https://openapi.baidu.com/oauth/2.0/token', {
+          params,
+          headers: {
+            'User-Agent': 'pan.baidu.com'
+          }
+        });
+
+        console.log('响应状态:', response.status);
+        console.log('响应数据:', response.data);
+
+        const data = response.data;
+
+        // 授权成功
+        if (data.access_token) {
+          console.log('授权成功！');
+          // 通知渲染进程授权成功
+          event.sender.send('auth-success', data);
+          return { success: true, data };
+        }
+
+        // 授权过期
+        if (data.error === 'expired_token') {
+          console.error('授权已过期');
+          return { success: false, error: 'expired_token' };
+        }
+
+        // 其他错误
+        if (data.error && data.error !== 'authorization_pending') {
+          console.error('设备码授权失败:', data);
+          return { success: false, error: data.error };
+        }
+
+        // 等待用户授权
+        if (data.error === 'authorization_pending') {
+          console.log('等待用户授权...');
+        }
+
+        // 等待5秒后继续轮询
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      } catch (error: any) {
+        // 特殊处理 authorization_pending 错误
+        if (error.response && error.response.data && error.response.data.error === 'authorization_pending') {
+          console.log('等待用户授权...');
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          continue;
+        }
+
+        console.error('设备码授权失败:', error.message);
+        if (error.response) {
+          console.error('错误响应:', error.response.status, error.response.data);
+        }
+        // 继续轮询而不是退出
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    }
+
+    console.error('设备码授权超时');
+    return { success: false, error: 'timeout' };
+  });
+}
 
 app.whenReady().then(() => {
+  registerIpcHandlers();
+
   // 拦截所有百度相关域名的请求
   const baiduUrls = [
     '*://*.baidu.com/*',
