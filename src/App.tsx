@@ -13,7 +13,19 @@ const App: React.FC = () => {
   // 只选择需要的状态
   const showLyrics = usePlayerStore(state => state.showLyrics);
   const setShowLyrics = usePlayerStore(state => state.setShowLyrics);
+  const currentSong = usePlayerStore(state => state.currentSong);
   const [isMiniMode, setIsMiniMode] = useState(false);
+
+  // 更新窗口标题
+  useEffect(() => {
+    if (currentSong) {
+      // 获取歌曲名（去除文件扩展名）
+      const songName = currentSong.server_filename.replace(/\.[^/.]+$/, '');
+      document.title = `${songName} - 度盘播放器`;
+    } else {
+      document.title = '度盘播放器';
+    }
+  }, [currentSong]);
 
   // 监听迷你模式变化（通过 IPC 事件）
   useEffect(() => {
