@@ -175,9 +175,14 @@ export const BackgroundAudio: React.FC = () => {
         const filename = currentSong.server_filename.toLowerCase();
         const ext = filename.split('.').pop();
         
-        // ALAC 文件通常使用 .m4a 扩展名，但我们需要检查是否需要转码
-        // 对于已知的不支持格式，直接进行转码
-        const unsupportedFormats = ['alac', 'flac', 'ape', 'wav'];
+        // 浏览器原生支持：mp3, wav, ogg, m4a(AAC编码)
+        // 不支持的无损格式：flac, ape, alac
+        // ALAC 文件通常使用 .m4a 扩展名
+        const unsupportedFormats = ['ape', 'alac'];
+        
+        // 只对确定不支持的格式进行转码
+        // FLAC 实际上在现代浏览器中是支持的，不需要转码
+        // 对于 m4a，只有当文件较大时才可能是 ALAC 编码需要转码
         return unsupportedFormats.includes(ext || '') ||
                (ext === 'm4a' && currentSong.size > 10000000); // 大于10MB的m4a文件可能包含ALAC
       };
