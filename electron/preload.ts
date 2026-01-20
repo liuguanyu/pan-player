@@ -35,6 +35,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // 返回清理函数
     return () => ipcRenderer.removeListener('mini-mode-changed', handler);
   },
+  
+  // 监听播放控制命令
+  onPlayerControl: (callback: (action: string) => void) => {
+    // 包装回调函数以处理事件对象
+    const handler = (_event: any, action: string) => callback(action);
+    ipcRenderer.on('player-control', handler);
+    // 返回清理函数
+    return () => ipcRenderer.removeListener('player-control', handler);
+  },
 
   // 示例API（保留以兼容旧代码）
   sendMessage: (message: string) => ipcRenderer.invoke('send-message', message),

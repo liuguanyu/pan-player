@@ -6,7 +6,7 @@ import { BackgroundAudio } from '@/components/player/BackgroundAudio';
 import { PlaylistSidebar } from '@/components/playlist/PlaylistSidebar';
 import { SongList } from '@/components/playlist/SongList';
 import { LyricsDisplay } from '@/components/lyrics/LyricsDisplay';
-import { usePlayerStore } from '@/store/playerStore';
+import { usePlayerStore, PlaybackMode } from '@/store/playerStore';
 
 const App: React.FC = () => {
   // 优化状态选择，避免不必要的重渲染
@@ -14,6 +14,14 @@ const App: React.FC = () => {
   const showLyrics = usePlayerStore(state => state.showLyrics);
   const setShowLyrics = usePlayerStore(state => state.setShowLyrics);
   const currentSong = usePlayerStore(state => state.currentSong);
+  const playNext = usePlayerStore(state => state.playNext);
+  const playPrevious = usePlayerStore(state => state.playPrevious);
+  const isPlaying = usePlayerStore(state => state.isPlaying);
+  const setIsPlaying = usePlayerStore(state => state.setIsPlaying);
+  const volume = usePlayerStore(state => state.volume);
+  const setVolume = usePlayerStore(state => state.setVolume);
+  const playbackMode = usePlayerStore(state => state.playbackMode);
+  const setPlaybackMode = usePlayerStore(state => state.setPlaybackMode);
   const [isMiniMode, setIsMiniMode] = useState(false);
 
   // 更新窗口标题
@@ -48,6 +56,45 @@ const App: React.FC = () => {
     window.addEventListener('resize', checkMiniMode);
     return () => window.removeEventListener('resize', checkMiniMode);
   }, []);
+
+  // 监听来自托盘和快捷键的播放控制消息
+  useEffect(() => {
+    if (window.electronAPI && window.electronAPI.onPlayerControl) {
+      const cleanup = window.electronAPI.onPlayerControl((action: string) => {
+        console.log('[App] 收到播放控制命令:', action);
+        switch (action) {
+          case 'next':
+            playNext();
+            break;
+          case 'previous':
+            playPrevious();
+            break;
+          case 'play-pause':
+            setIsPlaying(!isPlaying);
+            break;
+          case 'mute':
+            setVolume(volume === 0 ? 0.7 : 0); // 切换静音状态
+            break;
+          case 'volume-up':
+            setVolume(Math.min(1, volume + 0.1)); // 增加音量
+            break;
+          case 'volume-down':
+            setVolume(Math.max(0, volume - 0.1)); // 减少音量
+            break;
+          case 'toggle-playback-mode':
+            // 切换播放模式: order -> random -> single -> order
+            const modes: PlaybackMode[] = ['order', 'random', 'single'];
+            const currentIndex = modes.indexOf(playbackMode);
+            const nextIndex = (currentIndex + 1) % modes.length;
+            setPlaybackMode(modes[nextIndex]);
+            break;
+          default:
+            console.log('[App] 未知的播放控制命令:', action);
+        }
+      });
+      return cleanup;
+    }
+  }, [playNext, playPrevious, isPlaying, setIsPlaying, volume, setVolume, playbackMode, setPlaybackMode]);
 
   // 迷你模式下直接渲染 MiniPlayer
   if (isMiniMode) {

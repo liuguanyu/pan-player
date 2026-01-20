@@ -34,6 +34,7 @@
 - ✅ 本地存储播放列表
 - ✅ 最近播放列表（最多30首）
 - ✅ 支持的音频格式：mp3, m4a, flac, wav, ogg, aac, wma
+- ✅ 支持无损格式转码播放：ALAC (.m4a), APE (.ape) - 实时转码为WAV
 
 ### 4. 歌词显示
 - ✅ LRC歌词解析
@@ -41,12 +42,35 @@
 - ✅ 手动选择LRC文件
 - ✅ 自动关联同文件夹.lrc文件
 
-### 5. 用户界面
+### 5. 系统集成
+- ✅ 系统托盘图标与菜单
+- ✅ 迷你播放器模式
+- ✅ 全局快捷键支持
+- ✅ 媒体键支持（上一曲/下一曲/播放暂停）
+- ✅ 系统通知集成
+
+### 6. 用户界面
 - ✅ 现代化Material Design风格
 - ✅ 响应式布局
 - ✅ 暗色主题支持
 - ✅ 用户信息显示
 - ✅ 退出登录功能
+
+## 快捷键说明
+
+支持两种快捷键操作方式，即使应用在后台运行也能控制：
+
+| 功能 | 多媒体键盘 | 普通键盘 (组合键) |
+|---|---|---|
+| 上一曲 | `⏮` MediaPrev | `Ctrl + Alt + ←` |
+| 下一曲 | `⏭` MediaNext | `Ctrl + Alt + →` |
+| 播放/暂停 | `⏯` MediaPlayPause | `Ctrl + Alt + Space` |
+| 静音/恢复 | `🔇` VolumeMute | - |
+| 音量增加 | `🔊` VolumeUp | `Ctrl + Alt + ↑` |
+| 音量减少 | `🔉` VolumeDown | `Ctrl + Alt + ↓` |
+| 切换播放模式 | - | `Ctrl + Shift + M` |
+
+*注：Mac系统上 `Ctrl` 对应 `Command` 键*
 
 ## 项目结构
 
@@ -198,22 +222,9 @@ export const usePlayerStore = create<PlayerState>()(
 
 ## 待完成功能
 
-- [ ] 从百度网盘自动加载LRC文件
 - [ ] 播放列表排序功能
 - [ ] 搜索功能
-- [ ] 播放历史记录
 - [ ] 播放队列管理
-- [ ] 键盘快捷键
-- [ ] 系统托盘支持
-- [ ] 媒体控制集成（Windows/macOS）
-
-## 参考项目
-
-本项目基于Python实现的百度网盘音乐播放器迁移而来：
-- 原项目路径: `D:\devspace\dupan-music-cmd\`
-- 主要参考文件:
-  - `dupan_music/auth.py` - 认证逻辑
-  - `dupan_music/playlist/playlist.py` - 播放列表管理
 
 ## 许可证
 

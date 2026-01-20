@@ -22,6 +22,9 @@ export interface ElectronAPI {
   // 监听迷你模式变化（返回清理函数）
   onMiniModeChange: (callback: (isMini: boolean) => void) => () => void;
   
+  // 监听播放控制命令（返回清理函数）
+  onPlayerControl: (callback: (action: string) => void) => () => void;
+  
   // 示例API
   sendMessage: (message: string) => Promise<any>;
 

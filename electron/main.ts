@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, powerSaveBlocker, IpcMainInvokeEvent, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, powerSaveBlocker, IpcMainInvokeEvent, protocol, globalShortcut } from 'electron';
 import path from 'path';
 import axios from 'axios';
 import * as fs from 'fs';
@@ -78,6 +78,25 @@ function createTray() {
       click: () => {
         if (mainWindow) {
           mainWindow.hide();
+        }
+      }
+    },
+    {
+      type: 'separator'
+    },
+    {
+      label: '上一曲',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.webContents.send('player-control', 'previous');
+        }
+      }
+    },
+    {
+      label: '下一曲',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.webContents.send('player-control', 'next');
         }
       }
     },
@@ -463,6 +482,9 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
 
+  // 注册全局快捷键
+  registerGlobalShortcuts();
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -474,6 +496,47 @@ app.whenReady().then(() => {
   console.log('Power Save Blocker ID:', id);
 });
 
+// 注册全局快捷键
+function registerGlobalShortcuts() {
+  // 辅助函数：发送命令到主窗口
+  const sendCommand = (command: string) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('player-control', command);
+    }
+  };
+
+  // 上一曲: 多媒体键 或 Ctrl+Alt+左箭头
+  globalShortcut.register('MediaPreviousTrack', () => sendCommand('previous'));
+  globalShortcut.register('CommandOrControl+Alt+Left', () => sendCommand('previous'));
+
+  // 下一曲: 多媒体键 或 Ctrl+Alt+右箭头
+  globalShortcut.register('MediaNextTrack', () => sendCommand('next'));
+  globalShortcut.register('CommandOrControl+Alt+Right', () => sendCommand('next'));
+
+  // 播放/暂停: 多媒体键 或 Ctrl+Alt+空格
+  globalShortcut.register('MediaPlayPause', () => sendCommand('play-pause'));
+  globalShortcut.register('CommandOrControl+Alt+Space', () => sendCommand('play-pause'));
+
+  // 静音: 多媒体键
+  globalShortcut.register('VolumeMute', () => sendCommand('mute'));
+
+  // 音量增加: 多媒体键 或 Ctrl+Alt+上箭头
+  globalShortcut.register('VolumeUp', () => sendCommand('volume-up'));
+  globalShortcut.register('CommandOrControl+Alt+Up', () => sendCommand('volume-up'));
+
+  // 音量减少: 多媒体键 或 Ctrl+Alt+下箭头
+  globalShortcut.register('VolumeDown', () => sendCommand('volume-down'));
+  globalShortcut.register('CommandOrControl+Alt+Down', () => sendCommand('volume-down'));
+
+  // 播放模式切换 - Cmd/Ctrl + Shift + M
+  globalShortcut.register('CommandOrControl+Shift+M', () => sendCommand('toggle-playback-mode'));
+}
+
+// 取消注册全局快捷键
+function unregisterGlobalShortcuts() {
+  globalShortcut.unregisterAll();
+}
+
 // 修改窗口关闭行为：因为有托盘，所以不自动退出
 app.on('window-all-closed', () => {
   // 不再自动退出，因为有系统托盘
@@ -484,6 +547,8 @@ app.on('window-all-closed', () => {
 // 应用退出前清理
 app.on('before-quit', () => {
   isQuitting = true;
+  // 取消注册全局快捷键
+  unregisterGlobalShortcuts();
   // 清理所有临时音频文件
   cleanupAllTempFiles();
 });

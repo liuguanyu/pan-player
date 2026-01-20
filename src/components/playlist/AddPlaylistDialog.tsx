@@ -172,7 +172,7 @@ export const AddPlaylistDialog: React.FC<AddPlaylistDialogProps> = ({ open, onOp
   // 过滤音频文件
   const audioFiles = files.filter(file => {
     const ext = file.server_filename.substring(file.server_filename.lastIndexOf('.')).toLowerCase();
-    return ['.mp3', '.m4a', '.flac', '.wav', '.ogg', '.aac', '.wma'].includes(ext);
+    return ['.mp3', '.m4a', '.flac', '.wav', '.ogg', '.aac', '.wma', '.ape', '.alac'].includes(ext);
   });
 
   const folders = files.filter(file => file.isdir === 1);

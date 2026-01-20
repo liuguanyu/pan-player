@@ -155,7 +155,7 @@ class BaiduPanAPI {
     limit: number = 1000
   ): Promise<FileInfo[] | null> {
     // 支持的音频文件扩展名
-    const audioExtensions = ['.mp3', '.m4a', '.flac', '.wav', '.ogg', '.aac', '.wma'];
+    const audioExtensions = ['.mp3', '.m4a', '.flac', '.wav', '.ogg', '.aac', '.wma', '.ape', '.alac'];
 
     // 获取文件列表（非递归）
     const files = await this.getFileList(dirPath, order, desc, limit);
@@ -163,7 +163,7 @@ class BaiduPanAPI {
 
     // 过滤音频文件
     const audioFiles = files.filter(
-      file => file.isdir === 0 && 
+      file => file.isdir === 0 &&
         audioExtensions.includes(
           file.server_filename.substring(file.server_filename.lastIndexOf('.')).toLowerCase()
         )
@@ -182,7 +182,7 @@ class BaiduPanAPI {
     limit: number = 1000
   ): Promise<FileInfo[] | null> {
     // 支持的音频文件扩展名
-    const audioExtensions = ['.mp3', '.m4a', '.flac', '.wav', '.ogg', '.aac', '.wma'];
+    const audioExtensions = ['.mp3', '.m4a', '.flac', '.wav', '.ogg', '.aac', '.wma', '.ape', '.alac'];
 
     // 获取文件列表（递归）
     const files = await this.getFileListRecursive(dirPath, order, desc, limit);
