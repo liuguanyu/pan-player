@@ -28,6 +28,9 @@ interface PlayerState {
   parsedLyrics: LyricLine[] | null;
   showLyrics: boolean;
   
+  // 音频可视化
+  visualizationType: 'particles' | 'bars' | 'wave' | 'none';
+  
   // 播放控制方法
   setIsPlaying: (isPlaying: boolean) => void;
   setCurrentTime: (time: number) => void;
@@ -57,6 +60,9 @@ interface PlayerState {
   setParsedLyrics: (parsedLyrics: LyricLine[] | null) => void;
   setShowLyrics: (show: boolean) => void;
   
+  // 音频可视化方法
+  setVisualizationType: (type: 'particles' | 'bars' | 'wave' | 'none') => void;
+  
   // 重置播放器
   reset: () => void;
 }
@@ -79,6 +85,7 @@ export const usePlayerStore = create<PlayerState>()(
       lyrics: null,
       parsedLyrics: null,
       showLyrics: false,
+      visualizationType: 'bars',
       
       // 播放控制方法
       setIsPlaying: (isPlaying) => set({ isPlaying }),
@@ -253,6 +260,9 @@ export const usePlayerStore = create<PlayerState>()(
       setParsedLyrics: (parsedLyrics) => set({ parsedLyrics }),
       setShowLyrics: (showLyrics) => set({ showLyrics }),
       
+      // 音频可视化方法
+      setVisualizationType: (visualizationType) => set({ visualizationType }),
+      
       // 重置播放器
       reset: () => set({
         isPlaying: false,
@@ -269,7 +279,8 @@ export const usePlayerStore = create<PlayerState>()(
         volume: state.volume,
         playbackMode: state.playbackMode,
         playlists: state.playlists,
-        recentSongs: state.recentSongs
+        recentSongs: state.recentSongs,
+        visualizationType: state.visualizationType
       })
     }
   )

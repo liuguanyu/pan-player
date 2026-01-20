@@ -6,6 +6,7 @@ import { BackgroundAudio } from '@/components/player/BackgroundAudio';
 import { PlaylistSidebar } from '@/components/playlist/PlaylistSidebar';
 import { SongList } from '@/components/playlist/SongList';
 import { LyricsDisplay } from '@/components/lyrics/LyricsDisplay';
+import { AudioVisualizer } from '@/components/player/AudioVisualizer';
 import { usePlayerStore, PlaybackMode } from '@/store/playerStore';
 
 const App: React.FC = () => {
@@ -131,6 +132,9 @@ const App: React.FC = () => {
         <div className="flex-1 bg-background flex flex-col overflow-hidden relative">
           {/* Song List with Header */}
           <SongList />
+          
+          {/* Audio Visualizer Overlay */}
+          <AudioVisualizer className="absolute inset-0 z-10" />
           
           {/* Lyrics Overlay */}
           {showLyrics && <LyricsDisplay onClose={() => setShowLyrics(false)} />}

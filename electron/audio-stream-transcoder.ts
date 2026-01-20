@@ -10,7 +10,8 @@ let ffmpegPath = ffmpegStatic;
 
 // 修复 Electron 开发环境下的路径问题
 // 在开发模式下，ffmpeg-static 返回的路径可能不正确，我们需要指向 node_modules 中的实际路径
-if (!app.isPackaged) {
+// 添加保护措施，确保 app 对象存在
+if (app && !app.isPackaged) {
     // 尝试在 node_modules 中找到 ffmpeg-static
     // 注意：这里的路径解析假设项目根目录结构
     const devFfmpegPath = resolve(__dirname, '../../node_modules/ffmpeg-static/ffmpeg.exe');

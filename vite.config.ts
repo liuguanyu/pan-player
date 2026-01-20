@@ -24,7 +24,7 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['electron', 'axios', 'path'],
+              external: ['electron', 'axios', 'path', 'fs', 'os', 'ffmpeg-static', 'fluent-ffmpeg'],
               output: {
                 format: 'cjs',
                 exports: 'auto'

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
 import { baiduAPI } from '@/services/baidu-api.service';
 import { parseLRC } from '@/lib/lrc-parser';
+import { audioContextService } from '@/services/audio-context.service';
 
 // 辅助函数：检查是否需要转码
 // 仅对明确不支持的格式（如 ape）返回 true
@@ -157,6 +158,9 @@ export const BackgroundAudio = () => {
       if (activePlayer === 'html5' || activePlayer === 'transcoded') {
         if (audioRef.current) {
           if (isPlaying) {
+            // 恢复音频上下文（如果是挂起状态）
+            audioContextService.resume();
+            
             // 捕获播放错误，避免未加载完成时报错
             await audioRef.current.play().catch(e => {
               if (e.name !== 'AbortError') console.error("HTML5 播放失败:", e);
@@ -203,6 +207,9 @@ export const BackgroundAudio = () => {
   // HTML5 事件处理
   const handleCanPlay = () => {
     if ((activePlayer === 'html5' || activePlayer === 'transcoded') && audioRef.current) {
+      // 初始化音频上下文
+      audioContextService.init(audioRef.current);
+      
       audioRef.current.volume = volume;
       if (isPlaying) {
         audioRef.current.play().catch(e => {
