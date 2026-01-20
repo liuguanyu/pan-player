@@ -1,8 +1,9 @@
-import React, { memo, useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef, useState, useCallback } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
 import { PlaylistItem } from '@/types/file';
 import { Button } from '@/components/ui/button';
-import { Trash2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Trash2, Search, X } from 'lucide-react';
 import { playlistService } from '@/services/playlist.service';
 
 const formatFileSize = (bytes: number): string => {
@@ -28,9 +29,11 @@ interface SongRowProps {
   song: PlaylistItem;
   index: number;
   isPlaying: boolean;
+  isSearchResult?: boolean;
+  isCurrentSearchResult?: boolean;
   onDoubleClick: (song: PlaylistItem) => void;
   onRemove: (e: React.MouseEvent, song: PlaylistItem) => void;
-  rowRef?: React.RefObject<HTMLTableRowElement>;
+  rowRef?: ((el: HTMLTableRowElement | null) => void) | React.RefObject<HTMLTableRowElement>;
 }
 
 // 单个歌曲行组件 - 使用 memo 优化性能
@@ -38,6 +41,8 @@ const SongRow = memo(({
   song,
   index,
   isPlaying,
+  isSearchResult,
+  isCurrentSearchResult,
   onDoubleClick,
   onRemove,
   rowRef
@@ -48,6 +53,8 @@ const SongRow = memo(({
       key={song.fs_id}
       className={`group border-b hover:bg-accent/50 cursor-pointer transition-colors ${
         isPlaying ? 'bg-accent' : ''
+      } ${isCurrentSearchResult ? 'bg-yellow-200/50 dark:bg-yellow-900/30' : ''} ${
+        isSearchResult && !isCurrentSearchResult ? 'bg-yellow-100/30 dark:bg-yellow-900/10' : ''
       }`}
       onDoubleClick={() => onDoubleClick(song)}
     >
@@ -94,9 +101,17 @@ export const SongList = () => {
   const removeRecentSong = usePlayerStore(state => state.removeRecentSong);
   const setIsPlaying = usePlayerStore(state => state.setIsPlaying);
 
+  // 搜索相关状态
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchResults, setSearchResults] = useState<PlaylistItem[]>([]);
+  const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   // 用于引用当前播放歌曲的行元素
   const currentSongRowRef = useRef<HTMLTableRowElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchResultRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
   // 获取当前显示的歌曲列表
   const getSongs = (): PlaylistItem[] => {
@@ -109,6 +124,111 @@ export const SongList = () => {
   };
 
   const songs = getSongs();
+
+  // 模糊搜索歌曲
+  const performSearch = useCallback((query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      setCurrentSearchIndex(0);
+      return;
+    }
+
+    const lowerQuery = query.toLowerCase();
+    const results = songs.filter(song =>
+      song.server_filename.toLowerCase().includes(lowerQuery)
+    );
+    
+    setSearchResults(results);
+    setCurrentSearchIndex(0);
+  }, [songs]);
+
+  // 处理搜索输入变化
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    performSearch(query);
+  };
+
+  // 切换到下一个搜索结果
+  const goToNextResult = useCallback(() => {
+    if (searchResults.length === 0) return;
+    const nextIndex = (currentSearchIndex + 1) % searchResults.length;
+    setCurrentSearchIndex(nextIndex);
+  }, [searchResults.length, currentSearchIndex]);
+
+  // 切换到上一个搜索结果
+  const goToPrevResult = useCallback(() => {
+    if (searchResults.length === 0) return;
+    const prevIndex = currentSearchIndex === 0
+      ? searchResults.length - 1
+      : currentSearchIndex - 1;
+    setCurrentSearchIndex(prevIndex);
+  }, [searchResults.length, currentSearchIndex]);
+
+  // 关闭搜索
+  const closeSearch = useCallback(() => {
+    setShowSearch(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    setCurrentSearchIndex(0);
+  }, []);
+
+  // 监听 Ctrl/Cmd+F 快捷键
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + F 打开搜索
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        setShowSearch(true);
+        setTimeout(() => searchInputRef.current?.focus(), 0);
+      }
+      
+      // ESC 关闭搜索
+      if (e.key === 'Escape' && showSearch) {
+        closeSearch();
+      }
+      
+      // 上下键切换搜索结果
+      if (showSearch && searchResults.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          goToNextResult();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          goToPrevResult();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showSearch, searchResults.length, goToNextResult, goToPrevResult, closeSearch]);
+
+  // 滚动到当前搜索结果
+  useEffect(() => {
+    if (searchResults.length > 0 && containerRef.current) {
+      const currentResult = searchResults[currentSearchIndex];
+      const rowElement = searchResultRefs.current.get(currentResult.fs_id);
+      
+      if (rowElement) {
+        const container = containerRef.current;
+        const rowRect = rowElement.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        
+        const isVisible =
+          rowRect.top >= containerRect.top &&
+          rowRect.bottom <= containerRect.bottom;
+        
+        if (!isVisible) {
+          const scrollTop = rowElement.offsetTop - container.offsetTop - (container.clientHeight / 2) + (rowElement.clientHeight / 2);
+          container.scrollTo({
+            top: scrollTop,
+            behavior: 'smooth'
+          });
+        }
+      }
+    }
+  }, [currentSearchIndex, searchResults]);
 
   // 当当前歌曲变化时，自动滚动到视口
   useEffect(() => {
@@ -164,7 +284,36 @@ export const SongList = () => {
   }
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
+    <div className="flex flex-col h-full">
+      {/* 搜索框 */}
+      {showSearch && (
+        <div className="flex items-center gap-2 p-2 border-b bg-background/95 backdrop-blur">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <Input
+            ref={searchInputRef}
+            type="text"
+            placeholder="搜索歌曲..."
+            value={searchQuery}
+            onChange={handleSearchChange}
+            className="flex-1 h-8"
+          />
+          {searchResults.length > 0 && (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {currentSearchIndex + 1} / {searchResults.length}
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={closeSearch}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+      
+      <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
       <table className="w-full border-collapse table-fixed">
         <thead className="sticky top-0 bg-background border-b z-10">
           <tr className="text-sm text-muted-foreground">
@@ -178,20 +327,34 @@ export const SongList = () => {
         <tbody>
           {songs.map((song, index) => {
             const isPlaying = currentSong?.fs_id === song.fs_id;
+            const isSearchResult = searchResults.some(r => r.fs_id === song.fs_id);
+            const isCurrentSearchResult = searchResults.length > 0 &&
+              searchResults[currentSearchIndex]?.fs_id === song.fs_id;
+            
             return (
               <SongRow
                 key={song.fs_id}
                 song={song}
                 index={index}
                 isPlaying={isPlaying}
+                isSearchResult={isSearchResult}
+                isCurrentSearchResult={isCurrentSearchResult}
                 onDoubleClick={handleSongDoubleClick}
                 onRemove={handleRemoveSong}
-                rowRef={isPlaying ? currentSongRowRef : undefined}
+                rowRef={(el: HTMLTableRowElement | null) => {
+                  if (isPlaying && el) {
+                    (currentSongRowRef as React.MutableRefObject<HTMLTableRowElement | null>).current = el;
+                  }
+                  if (isSearchResult && el) {
+                    searchResultRefs.current.set(song.fs_id, el);
+                  }
+                }}
               />
             );
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 };

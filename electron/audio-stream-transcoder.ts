@@ -71,7 +71,7 @@ function detectAudioCodec(url: string): Promise<string | null> {
  */
 export function setupAudioStreamTranscoder() {
   // 处理音频编码检测请求
-  ipcMain.handle('detect-audio-codec', async (_event: IpcMainEvent, url: string) => {
+  ipcMain.handle('detect-audio-codec', async (_event, url: string) => {
     try {
       const codec = await detectAudioCodec(url);
       return { success: true, codec };

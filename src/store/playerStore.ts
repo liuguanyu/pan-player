@@ -65,7 +65,7 @@ interface PlayerState {
   
   // 音频可视化方法
   setShowVisualizer: (show: boolean) => void;
-  setVisualizationType: (type: 'particles' | 'bars' | 'wave' | 'none') => void;
+  setVisualizationType: (type: 'particles' | 'bars' | 'wave' | 'sheep' | 'none') => void;
   
   // 重置播放器
   reset: () => void;
