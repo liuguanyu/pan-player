@@ -12,6 +12,7 @@ interface PlayerState {
   duration: number;
   volume: number;
   playbackMode: PlaybackMode;
+  playbackRate: number; // 播放速度
   
   // 当前播放的歌曲
   currentSong: PlaylistItem | null;
@@ -38,6 +39,7 @@ interface PlayerState {
   setDuration: (duration: number) => void;
   setVolume: (volume: number) => void;
   setPlaybackMode: (mode: PlaybackMode) => void;
+  setPlaybackRate: (rate: number) => void;
   
   // 歌曲控制方法
   setCurrentSong: (song: PlaylistItem | null) => void;
@@ -80,6 +82,7 @@ export const usePlayerStore = create<PlayerState>()(
       duration: 0,
       volume: 0.7,
       playbackMode: 'order',
+      playbackRate: 1.0,
       currentSong: null,
       playlists: [],
       currentPlaylist: null,
@@ -96,6 +99,7 @@ export const usePlayerStore = create<PlayerState>()(
       setDuration: (duration) => set({ duration }),
       setVolume: (volume) => set({ volume: Math.max(0, Math.min(1, volume)) }),
       setPlaybackMode: (playbackMode) => set({ playbackMode }),
+      setPlaybackRate: (playbackRate) => set({ playbackRate }),
       
       // 歌曲控制方法
       setCurrentSong: (currentSong) => set({
@@ -288,6 +292,7 @@ export const usePlayerStore = create<PlayerState>()(
       partialize: (state) => ({
         volume: state.volume,
         playbackMode: state.playbackMode,
+        playbackRate: state.playbackRate,
         playlists: state.playlists,
         recentSongs: state.recentSongs,
         showVisualizer: state.showVisualizer,

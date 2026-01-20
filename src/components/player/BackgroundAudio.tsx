@@ -18,6 +18,7 @@ export const BackgroundAudio = () => {
     isPlaying,
     currentTime,
     volume,
+    playbackRate,
     currentSong,
     setIsPlaying,
     setCurrentTime,
@@ -178,6 +179,11 @@ export const BackgroundAudio = () => {
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
+
+  // 监听播放速度变化
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = playbackRate;
+  }, [playbackRate]);
 
   // 监听进度拖拽/跳转 (Store -> Player)
   useEffect(() => {

@@ -1,11 +1,17 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { usePlayerStore } from '@/store/playerStore';
 import { formatTime } from '@/lib/utils';
 import { PlaybackMode } from '@/store/playerStore';
 import { useAuth } from '@/hooks/useAuth';
-import { FileText, LogOut, Minimize2, Repeat, Repeat1, Shuffle, Waves } from 'lucide-react';
+import { FileText, LogOut, Minimize2, Repeat, Repeat1, Shuffle, Waves, ChevronDown } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface PlayerControlsProps {
   onToggleLyrics?: () => void;
@@ -21,15 +27,22 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics, on
     duration,
     volume,
     playbackMode,
+    playbackRate,
     currentSong,
     showVisualizer,
     setIsPlaying,
     setCurrentTime,
     setVolume,
     setPlaybackMode,
+    setPlaybackRate,
     playNext,
     playPrevious
   } = usePlayerStore();
+  
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  
+  // 可用的播放速度选项
+  const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3];
   
   // 格式化时间显示
   const formattedCurrentTime = formatTime(currentTime);
@@ -183,6 +196,35 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics, on
               className="flex-1"
             />
           </div>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-white hover:text-white/80 hover:bg-white/10 flex items-center gap-0.5 min-w-[3.5rem]"
+                title={`播放速度: ${playbackRate}x`}
+                disabled={!currentSong}
+              >
+                <span className="text-xs font-bold">{playbackRate}x</span>
+                <ChevronDown className="h-3 w-3 opacity-70" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-32">
+              {playbackRates.map((rate) => (
+                <DropdownMenuItem
+                  key={rate}
+                  onClick={() => setPlaybackRate(rate)}
+                  className={playbackRate === rate ? 'bg-accent' : ''}
+                >
+                  <span className="flex items-center justify-between w-full">
+                    <span>{rate}x</span>
+                    {rate === 1 && <span className="text-xs text-muted-foreground ml-2">(正常)</span>}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           
           <Button
             variant="ghost"

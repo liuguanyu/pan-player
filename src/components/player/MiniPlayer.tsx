@@ -10,6 +10,7 @@ export const MiniPlayer: React.FC = () => {
     isPlaying,
     setIsPlaying,
     currentTime,
+    playbackRate,
     parsedLyrics,
     playNext,
     playPrevious
@@ -49,12 +50,23 @@ export const MiniPlayer: React.FC = () => {
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* 歌词/歌名显示 */}
-      <div
-        className={`flex-1 text-white text-sm font-medium truncate transition-opacity duration-300 ${
-          isHovered ? 'opacity-30' : 'opacity-100'
-        }`}
-      >
-        {currentLyricText}
+      <div className="flex-1 flex items-center gap-2">
+        <div
+          className={`flex-1 text-white text-sm font-medium truncate transition-opacity duration-300 ${
+            isHovered ? 'opacity-30' : 'opacity-100'
+          }`}
+        >
+          {currentLyricText}
+        </div>
+        {playbackRate !== 1 && (
+          <div
+            className={`text-xs text-white/80 font-bold bg-white/20 px-2 py-0.5 rounded transition-opacity duration-300 ${
+              isHovered ? 'opacity-30' : 'opacity-100'
+            }`}
+          >
+            {playbackRate}x
+          </div>
+        )}
       </div>
 
       {/* 控制按钮 - 鼠标悬停时显示 */}
