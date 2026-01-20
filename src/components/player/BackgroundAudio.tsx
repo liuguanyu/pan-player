@@ -4,11 +4,12 @@ import { baiduAPI } from '@/services/baidu-api.service';
 import { parseLRC } from '@/lib/lrc-parser';
 
 // 辅助函数：检查是否需要转码
-// M4A 文件也可能是 ALAC 编码，需要转码
+// 仅对明确不支持的格式（如 ape）返回 true
+// m4a 可能包含 aac（支持）或 alac（不支持），需要先尝试播放
 const needsTranscoding = (filename: string) => {
   if (!filename) return false;
   const ext = filename.split('.').pop()?.toLowerCase();
-  return ['alac', 'ape', 'm4a'].includes(ext || '');
+  return ['alac', 'ape'].includes(ext || '');
 };
 
 export const BackgroundAudio = () => {
@@ -52,6 +53,7 @@ export const BackgroundAudio = () => {
         }
 
         const filename = currentSong.server_filename;
+        // 对于 M4A 文件，先尝试直接播放，出错后再检测编码
         const useTranscoding = needsTranscoding(filename);
 
         if (useTranscoding) {
@@ -235,13 +237,27 @@ export const BackgroundAudio = () => {
     // 如果是 HTML5 播放失败，且错误码为 4 (MEDIA_ERR_SRC_NOT_SUPPORTED)，尝试转码播放
     // 这通常发生在 .m4a 文件实际上是 ALAC 编码时，或者浏览器不支持该格式
     if (activePlayer === 'html5' && error && error.code === 4 && currentSong) {
-      console.log(`[播放器] HTML5 播放失败 (code 4)，尝试转码播放: ${currentSong.server_filename}`);
+      console.log(`[播放器] HTML5 播放失败 (code 4)，检查是否需要转码: ${currentSong.server_filename}`);
       
       // 切换到转码模式
       const startTranscoding = async () => {
         try {
            const link = await baiduAPI.getDownloadLink(currentSong.fs_id);
            if (!link) return;
+
+           // 检测音频编码
+           console.log('[播放器] 检测音频编码...');
+           const codecResult = await window.electronAPI.detectAudioCodec(link);
+           if (codecResult.success && codecResult.codec) {
+             console.log(`[播放器] 音频编码: ${codecResult.codec}`);
+             // 如果是 AAC 编码但播放失败，可能是其他问题，不建议强制转码
+             // 但为了最大兼容性，只要不是明确支持的格式，都尝试转码
+             // HTML5 audio 明确支持: mp3, wav, ogg, aac (在 m4a 容器中)
+             const supportedCodecs = ['mp3', 'wav', 'ogg', 'aac'];
+             if (supportedCodecs.includes(codecResult.codec.toLowerCase())) {
+               console.warn(`[播放器] 格式 ${codecResult.codec} 应该被支持，但播放失败。尝试转码作为后备方案。`);
+             }
+           }
 
            setActivePlayer('transcoded');
            

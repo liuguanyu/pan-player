@@ -34,6 +34,7 @@ export interface ElectronAPI {
   onTranscodeFail: (fileId: string, callback: (error: string) => void) => () => void;
   onTranscodeProgress: (fileId: string, callback: (progress: any) => void) => () => void;
   cleanupTempAudio: (filePath: string) => void;
+  detectAudioCodec: (url: string) => Promise<{ success: boolean; codec: string | null }>;
 }
 
 declare global {

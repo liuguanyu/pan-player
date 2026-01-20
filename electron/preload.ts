@@ -78,4 +78,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cleanupTempAudio: (filePath: string) => {
     ipcRenderer.send('cleanup-temp-audio', filePath);
   },
+
+  // 检测音频编码
+  detectAudioCodec: (url: string) => ipcRenderer.invoke('detect-audio-codec', url),
 });

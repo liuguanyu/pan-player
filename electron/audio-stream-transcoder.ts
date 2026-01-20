@@ -41,9 +41,45 @@ if (ffmpegPath) {
 const tempFiles = new Set<string>();
 
 /**
+ * 检测音频编码类型
+ */
+function detectAudioCodec(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(url, (err, metadata) => {
+      if (err) {
+        console.error('[编码检测失败]', err.message);
+        resolve(null);
+        return;
+      }
+
+      // 查找音频流
+      const audioStream = metadata.streams.find(s => s.codec_type === 'audio');
+      if (audioStream && audioStream.codec_name) {
+        console.log('[检测到音频编码]', audioStream.codec_name);
+        resolve(audioStream.codec_name);
+      } else {
+        console.warn('[未找到音频流]');
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
  * 注册 ALAC 流式转码 IPC 处理器
  */
 export function setupAudioStreamTranscoder() {
+  // 处理音频编码检测请求
+  ipcMain.handle('detect-audio-codec', async (_event: IpcMainEvent, url: string) => {
+    try {
+      const codec = await detectAudioCodec(url);
+      return { success: true, codec };
+    } catch (error) {
+      console.error('[编码检测异常]', error);
+      return { success: false, codec: null };
+    }
+  });
+
   // 处理 ALAC 转码请求
   ipcMain.on('transcode-alac', (event: IpcMainEvent, { url, fileId }: { url: string; fileId: string }) => {
     const tempWavPath = join(tmpdir(), `dupan-alac-${fileId}-${Date.now()}.wav`);
