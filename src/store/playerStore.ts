@@ -30,7 +30,7 @@ interface PlayerState {
   
   // 音频可视化
   showVisualizer: boolean;
-  visualizationType: 'particles' | 'bars' | 'wave' | 'none';
+  visualizationType: 'particles' | 'bars' | 'wave' | 'sheep' | 'none';
   
   // 播放控制方法
   setIsPlaying: (isPlaying: boolean) => void;
