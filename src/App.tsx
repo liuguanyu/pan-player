@@ -14,6 +14,8 @@ const App: React.FC = () => {
   // 只选择需要的状态
   const showLyrics = usePlayerStore(state => state.showLyrics);
   const setShowLyrics = usePlayerStore(state => state.setShowLyrics);
+  const showVisualizer = usePlayerStore(state => state.showVisualizer);
+  const setShowVisualizer = usePlayerStore(state => state.setShowVisualizer);
   const currentSong = usePlayerStore(state => state.currentSong);
   const playNext = usePlayerStore(state => state.playNext);
   const playPrevious = usePlayerStore(state => state.playPrevious);
@@ -24,6 +26,11 @@ const App: React.FC = () => {
   const playbackMode = usePlayerStore(state => state.playbackMode);
   const setPlaybackMode = usePlayerStore(state => state.setPlaybackMode);
   const [isMiniMode, setIsMiniMode] = useState(false);
+
+  // 应用启动时重置可视化状态
+  useEffect(() => {
+    setShowVisualizer(false);
+  }, [setShowVisualizer]);
 
   // 更新窗口标题
   useEffect(() => {
@@ -119,7 +126,10 @@ const App: React.FC = () => {
       {/* Header / Player Area */}
       <header className="border-b h-[120px] flex-shrink-0 bg-gradient-to-r from-blue-900 via-blue-800 to-gray-100 z-10">
         <div className="h-full px-4 py-2 w-full">
-          <PlayerControls onToggleLyrics={() => setShowLyrics(!showLyrics)} />
+          <PlayerControls
+            onToggleLyrics={() => setShowLyrics(!showLyrics)}
+            onToggleVisualizer={() => setShowVisualizer(!showVisualizer)}
+          />
         </div>
       </header>
 
@@ -134,7 +144,7 @@ const App: React.FC = () => {
           <SongList />
           
           {/* Audio Visualizer Overlay */}
-          <AudioVisualizer className="absolute inset-0 z-10" />
+          {showVisualizer && <AudioVisualizer className="absolute inset-0 z-10" />}
           
           {/* Lyrics Overlay */}
           {showLyrics && <LyricsDisplay onClose={() => setShowLyrics(false)} />}

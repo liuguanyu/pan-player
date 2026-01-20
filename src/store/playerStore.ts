@@ -29,6 +29,7 @@ interface PlayerState {
   showLyrics: boolean;
   
   // 音频可视化
+  showVisualizer: boolean;
   visualizationType: 'particles' | 'bars' | 'wave' | 'none';
   
   // 播放控制方法
@@ -61,6 +62,7 @@ interface PlayerState {
   setShowLyrics: (show: boolean) => void;
   
   // 音频可视化方法
+  setShowVisualizer: (show: boolean) => void;
   setVisualizationType: (type: 'particles' | 'bars' | 'wave' | 'none') => void;
   
   // 重置播放器
@@ -85,6 +87,7 @@ export const usePlayerStore = create<PlayerState>()(
       lyrics: null,
       parsedLyrics: null,
       showLyrics: false,
+      showVisualizer: false,
       visualizationType: 'bars',
       
       // 播放控制方法
@@ -261,6 +264,13 @@ export const usePlayerStore = create<PlayerState>()(
       setShowLyrics: (showLyrics) => set({ showLyrics }),
       
       // 音频可视化方法
+      setShowVisualizer: (showVisualizer) => set((state) => {
+        // 如果开启可视化且当前类型为 none，则默认设置为 bars
+        if (showVisualizer && state.visualizationType === 'none') {
+          return { showVisualizer, visualizationType: 'bars' };
+        }
+        return { showVisualizer };
+      }),
       setVisualizationType: (visualizationType) => set({ visualizationType }),
       
       // 重置播放器
@@ -280,6 +290,7 @@ export const usePlayerStore = create<PlayerState>()(
         playbackMode: state.playbackMode,
         playlists: state.playlists,
         recentSongs: state.recentSongs,
+        showVisualizer: state.showVisualizer,
         visualizationType: state.visualizationType
       })
     }

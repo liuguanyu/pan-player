@@ -18,7 +18,7 @@ interface AudioVisualizerProps {
 export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ className }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
-  const { visualizationType, setVisualizationType, isPlaying } = usePlayerStore();
+  const { visualizationType, setVisualizationType, isPlaying, showVisualizer } = usePlayerStore();
   
   // 粒子系统状态
   const particlesRef = useRef<Array<{
@@ -32,7 +32,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ className }) =
   }>>([]);
 
   useEffect(() => {
-    if (visualizationType === 'none' || !isPlaying) {
+    if (!showVisualizer || !isPlaying) {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
         animationRef.current = null;
@@ -95,7 +95,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ className }) =
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [visualizationType, isPlaying]);
+  }, [visualizationType, isPlaying, showVisualizer]);
 
   // 绘制柱形图（频谱）
   const drawBars = (ctx: CanvasRenderingContext2D, data: Uint8Array, width: number, height: number) => {
@@ -207,7 +207,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ className }) =
     ctx.stroke();
   };
 
-  if (visualizationType === 'none') return null;
+  if (!showVisualizer) return null;
 
   return (
     <ContextMenu>
@@ -234,18 +234,11 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ className }) =
         >
           柱形频谱
         </ContextMenuCheckboxItem>
-        <ContextMenuCheckboxItem 
+        <ContextMenuCheckboxItem
           checked={visualizationType === 'wave'}
           onCheckedChange={() => setVisualizationType('wave')}
         >
           波形图
-        </ContextMenuCheckboxItem>
-        <ContextMenuSeparator />
-        <ContextMenuCheckboxItem
-          checked={visualizationType === 'none'}
-          onCheckedChange={() => setVisualizationType('none' as any)}
-        >
-          关闭显示
         </ContextMenuCheckboxItem>
       </ContextMenuContent>
     </ContextMenu>

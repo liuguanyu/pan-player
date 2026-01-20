@@ -13,6 +13,7 @@ export const PlaylistSidebar: React.FC = () => {
   const setCurrentPlaylist = usePlayerStore(state => state.setCurrentPlaylist);
   const recentSongs = usePlayerStore(state => state.recentSongs);
   const setShowLyrics = usePlayerStore(state => state.setShowLyrics);
+  const setShowVisualizer = usePlayerStore(state => state.setShowVisualizer);
   const { isAuthenticated } = useAuth();
   const [showAddDialog, setShowAddDialog] = useState(false);
 
@@ -65,6 +66,7 @@ export const PlaylistSidebar: React.FC = () => {
           onClick={() => {
             setCurrentPlaylist('recent');
             setShowLyrics(false); // 切换列表时隐藏歌词
+            setShowVisualizer(false); // 切换列表时关闭可视化
           }}
         >
           最近播放
@@ -87,6 +89,7 @@ export const PlaylistSidebar: React.FC = () => {
               onClick={() => {
                 setCurrentPlaylist(playlist.name);
                 setShowLyrics(false); // 切换列表时隐藏歌词
+                setShowVisualizer(false); // 切换列表时关闭可视化
               }}
             >
               <div className="flex-1 truncate">

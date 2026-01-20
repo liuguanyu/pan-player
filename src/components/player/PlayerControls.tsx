@@ -5,14 +5,15 @@ import { usePlayerStore } from '@/store/playerStore';
 import { formatTime } from '@/lib/utils';
 import { PlaybackMode } from '@/store/playerStore';
 import { useAuth } from '@/hooks/useAuth';
-import { FileText, LogOut, Minimize2, Repeat, Repeat1, Shuffle } from 'lucide-react';
+import { FileText, LogOut, Minimize2, Repeat, Repeat1, Shuffle, Waves } from 'lucide-react';
 
 interface PlayerControlsProps {
   onToggleLyrics?: () => void;
+  onToggleVisualizer?: () => void;
 }
 
 // 使用 memo 包装 PlayerControls 组件，避免不必要的重渲染
-const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) => {
+const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics, onToggleVisualizer }) => {
   const { userInfo, logout } = useAuth();
   const {
     isPlaying,
@@ -21,6 +22,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
     volume,
     playbackMode,
     currentSong,
+    showVisualizer,
     setIsPlaying,
     setCurrentTime,
     setVolume,
@@ -181,6 +183,17 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics }) 
               className="flex-1"
             />
           </div>
+          
+          <Button
+            variant="ghost"
+            size="icon"
+            className={`h-8 w-8 hover:text-white/80 hover:bg-white/10 ${showVisualizer ? 'text-white' : 'text-white/60'}`}
+            onClick={onToggleVisualizer}
+            title="显示可视化"
+            disabled={!currentSong}
+          >
+            <Waves className="h-4 w-4" />
+          </Button>
           
           <Button
             variant="ghost"
