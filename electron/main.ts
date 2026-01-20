@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, powerSaveBlocker, IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, powerSaveBlocker, IpcMainInvokeEvent, protocol } from 'electron';
 import path from 'path';
 import axios from 'axios';
 import * as fs from 'fs';
+import { setupAudioStreamTranscoder, cleanupAllTempFiles } from './audio-stream-transcoder';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -403,6 +404,21 @@ app.whenReady().then(() => {
   initConfigPath();
   
   registerIpcHandlers();
+  
+  // 设置音频流式转码
+  setupAudioStreamTranscoder();
+
+  // 注册自定义协议来提供本地文件访问
+  protocol.registerFileProtocol('local-audio', (request, callback) => {
+    // 从 URL 中提取文件路径: local-audio://path/to/file
+    const url = request.url.substring('local-audio://'.length);
+    // URL 解码以处理路径中的特殊字符
+    const filePath = decodeURIComponent(url);
+    
+    console.log('[Protocol] 请求本地音频文件:', filePath);
+    
+    callback({ path: filePath });
+  });
 
   // 拦截所有百度相关域名的请求
   const baiduUrls = [
@@ -468,4 +484,6 @@ app.on('window-all-closed', () => {
 // 应用退出前清理
 app.on('before-quit', () => {
   isQuitting = true;
+  // 清理所有临时音频文件
+  cleanupAllTempFiles();
 });

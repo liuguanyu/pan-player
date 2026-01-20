@@ -4,7 +4,7 @@ export interface ElectronAPI {
   // HTTP请求
   httpRequest: (config: any) => Promise<any>;
   
-  // 下载文件（用于音频转换）
+  // 下载文件
   downloadFile: (url: string) => Promise<{ success: boolean; data?: number[]; error?: string }>;
   
   // 设备码授权轮询
@@ -24,6 +24,13 @@ export interface ElectronAPI {
   
   // 示例API
   sendMessage: (message: string) => Promise<any>;
+
+  // ALAC/APE 转码相关
+  transcodeAlac: (url: string, fileId: string) => void;
+  onTranscodeComplete: (fileId: string, callback: (result: { success: boolean; outputPath: string }) => void) => () => void;
+  onTranscodeFail: (fileId: string, callback: (error: string) => void) => () => void;
+  onTranscodeProgress: (fileId: string, callback: (progress: any) => void) => () => void;
+  cleanupTempAudio: (filePath: string) => void;
 }
 
 declare global {

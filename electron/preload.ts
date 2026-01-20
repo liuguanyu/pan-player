@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // HTTP请求
   httpRequest: (config: any) => ipcRenderer.invoke('http-request', config),
   
-  // 下载文件（用于音频转换）
+  // 下载文件（保留以兼容旧代码）
   downloadFile: (url: string) => ipcRenderer.invoke('download-file', url),
   
   // 设备码授权轮询
@@ -38,4 +38,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 示例API（保留以兼容旧代码）
   sendMessage: (message: string) => ipcRenderer.invoke('send-message', message),
+  
+  // ALAC 转码
+  transcodeAlac: (url: string, fileId: string) => {
+    ipcRenderer.send('transcode-alac', { url, fileId });
+  },
+  
+  // 监听转码完成
+  onTranscodeComplete: (fileId: string, callback: (result: { success: boolean; outputPath: string }) => void) => {
+    const handler = (_event: any, result: { success: boolean; outputPath: string }) => callback(result);
+    ipcRenderer.on(`transcode-complete-${fileId}`, handler);
+    return () => ipcRenderer.removeListener(`transcode-complete-${fileId}`, handler);
+  },
+  
+  // 监听转码失败
+  onTranscodeFail: (fileId: string, callback: (error: string) => void) => {
+    const handler = (_event: any, error: string) => callback(error);
+    ipcRenderer.on(`transcode-fail-${fileId}`, handler);
+    return () => ipcRenderer.removeListener(`transcode-fail-${fileId}`, handler);
+  },
+  
+  // 监听转码进度
+  onTranscodeProgress: (fileId: string, callback: (progress: any) => void) => {
+    const handler = (_event: any, progress: any) => callback(progress);
+    ipcRenderer.on(`transcode-progress-${fileId}`, handler);
+    return () => ipcRenderer.removeListener(`transcode-progress-${fileId}`, handler);
+  },
+  
+  // 清理临时文件
+  cleanupTempAudio: (filePath: string) => {
+    ipcRenderer.send('cleanup-temp-audio', filePath);
+  },
 });

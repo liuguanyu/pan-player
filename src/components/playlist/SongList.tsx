@@ -24,6 +24,15 @@ const formatDuration = (seconds: number | undefined): string => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
+interface SongRowProps {
+  song: PlaylistItem;
+  index: number;
+  isPlaying: boolean;
+  onDoubleClick: (song: PlaylistItem) => void;
+  onRemove: (e: React.MouseEvent, song: PlaylistItem) => void;
+  rowRef?: React.RefObject<HTMLTableRowElement>;
+}
+
 // 单个歌曲行组件 - 使用 memo 优化性能
 const SongRow = memo(({
   song,
@@ -32,14 +41,7 @@ const SongRow = memo(({
   onDoubleClick,
   onRemove,
   rowRef
-}: {
-  song: PlaylistItem;
-  index: number;
-  isPlaying: boolean;
-  onDoubleClick: (song: PlaylistItem) => void;
-  onRemove: (e: React.MouseEvent, song: PlaylistItem) => void;
-  rowRef?: React.Ref<HTMLTableRowElement>;
-}) => {
+}: SongRowProps) => {
   return (
     <tr
       ref={rowRef}
@@ -81,7 +83,7 @@ const SongRow = memo(({
 
 SongRow.displayName = 'SongRow';
 
-export const SongList: React.FC = () => {
+export const SongList = () => {
   // 优化状态选择，只订阅需要的状态
   const playlists = usePlayerStore(state => state.playlists);
   const currentPlaylist = usePlayerStore(state => state.currentPlaylist);
@@ -91,7 +93,6 @@ export const SongList: React.FC = () => {
   const addRecentSong = usePlayerStore(state => state.addRecentSong);
   const removeRecentSong = usePlayerStore(state => state.removeRecentSong);
   const setIsPlaying = usePlayerStore(state => state.setIsPlaying);
-  const updatePlaylist = usePlayerStore(state => state.updatePlaylist);
 
   // 用于引用当前播放歌曲的行元素
   const currentSongRowRef = useRef<HTMLTableRowElement>(null);
