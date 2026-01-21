@@ -1,6 +1,8 @@
 export interface LyricLine {
+  id?: string; // 唯一标识符
   time: number; // 时间（秒）
   text: string; // 歌词文本
+  isInterlude?: boolean; // 是否为间奏
 }
 
 /**
@@ -33,7 +35,12 @@ export const parseLRC = (lrcContent: string): LyricLine[] => {
           
           const time = minutes * 60 + seconds + milliseconds / 1000;
           
-          lines.push({ time, text });
+          lines.push({
+            id: generateLyricId(),
+            time,
+            text,
+            isInterlude: false
+          });
         }
       }
     }
@@ -78,4 +85,55 @@ export const formatLRCTime = (seconds: number): string => {
   const ms = Math.floor((seconds % 1) * 100);
   
   return `[${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}]`;
+};
+
+/**
+ * 生成唯一ID
+ */
+export const generateLyricId = (): string => {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+};
+
+/**
+ * 从纯文本生成歌词行数组（每行一条歌词，时间初始为null）
+ * @param textContent 纯文本内容
+ * @returns 歌词行数组
+ */
+export const parsePlainText = (textContent: string): LyricLine[] => {
+  if (!textContent) return [];
+  
+  const lines: LyricLine[] = [];
+  const textLines = textContent.split('\n');
+  
+  for (const line of textLines) {
+    const trimmed = line.trim();
+    if (trimmed) {
+      lines.push({
+        id: generateLyricId(),
+        time: -1, // 使用-1表示未设置时间
+        text: trimmed,
+        isInterlude: false
+      });
+    }
+  }
+  
+  return lines;
+};
+
+/**
+ * 生成LRC文件内容
+ * @param lyrics 歌词数组
+ * @returns LRC格式的字符串
+ */
+export const generateLRC = (lyrics: LyricLine[]): string => {
+  // 只包含有时间标记的歌词
+  const validLyrics = lyrics.filter(line => line.time >= 0);
+  
+  // 按时间排序
+  const sorted = [...validLyrics].sort((a, b) => a.time - b.time);
+  
+  return sorted.map(line => {
+    const timeTag = formatLRCTime(line.time);
+    return `${timeTag}${line.text}`;
+  }).join('\n');
 };

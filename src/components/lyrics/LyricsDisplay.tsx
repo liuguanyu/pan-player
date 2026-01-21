@@ -2,13 +2,21 @@ import React, { useEffect, useRef } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
 import { parseLRC, getCurrentLyricIndex, LyricLine } from '@/lib/lrc-parser';
 import { Button } from '@/components/ui/button';
-import { Upload, X } from 'lucide-react';
+import { Upload, X, Edit, Eye } from 'lucide-react';
+import { LyricsEditor } from './LyricsEditor';
+
 interface LyricsDisplayProps {
   onClose: () => void;
 }
 
 export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
-  const { currentTime, parsedLyrics, setParsedLyrics } = usePlayerStore();
+  const {
+    currentTime,
+    parsedLyrics,
+    setParsedLyrics,
+    isEditingLyrics,
+    setIsEditingLyrics
+  } = usePlayerStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const [lyrics, setLyrics] = React.useState<LyricLine[]>(parsedLyrics || []);
   const [currentIndex, setCurrentIndex] = React.useState(-1);
@@ -81,15 +89,45 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
 
   return (
     <div className="absolute inset-0 bg-background/95 backdrop-blur-sm z-20 flex flex-col">
-      {/* 关闭按钮 */}
-      <div className="absolute top-4 right-4 z-10">
+      {/* 顶部操作栏 */}
+      <div className="flex items-center justify-between p-4 border-b">
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-semibold">
+            {isEditingLyrics ? '歌词编辑' : '歌词显示'}
+          </h3>
+          {lyrics.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsEditingLyrics(!isEditingLyrics)}
+              className="gap-2"
+            >
+              {isEditingLyrics ? (
+                <>
+                  <Eye className="h-4 w-4" />
+                  预览模式
+                </>
+              ) : (
+                <>
+                  <Edit className="h-4 w-4" />
+                  编辑模式
+                </>
+              )}
+            </Button>
+          )}
+        </div>
         <Button variant="ghost" size="icon" onClick={onClose}>
           <X className="h-5 w-5" />
         </Button>
       </div>
 
-      {/* 歌词内容 */}
-      <div className="flex-1 overflow-y-auto" ref={containerRef}>
+      {/* 歌词内容或编辑器 */}
+      {isEditingLyrics ? (
+        <div className="flex-1 overflow-hidden p-4">
+          <LyricsEditor />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto" ref={containerRef}>
         <div className="max-w-2xl mx-auto space-y-6 py-[50vh]">
           {lyrics.length > 0 ? (
             lyrics.map((line, index) => (
@@ -130,11 +168,12 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
             </div>
           )}
         </div>
-      </div>
+        </div>
+      )}
 
-      {/* 底部操作栏 */}
-      {lyrics.length > 0 && (
-        <div className="border-t p-4 flex justify-center">
+      {/* 底部操作栏 - 仅在显示模式且有歌词时显示 */}
+      {!isEditingLyrics && lyrics.length > 0 && (
+        <div className="border-t p-4 flex justify-center gap-2">
           <Button
             variant="outline"
             onClick={handleSelectLRCFile}
@@ -142,6 +181,36 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
           >
             <Upload className="h-4 w-4" />
             更换歌词文件
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setIsEditingLyrics(true)}
+            className="gap-2"
+          >
+            <Edit className="h-4 w-4" />
+            编辑歌词
+          </Button>
+        </div>
+      )}
+      
+      {/* 底部操作栏 - 仅在显示模式且无歌词时显示 */}
+      {!isEditingLyrics && lyrics.length === 0 && (
+        <div className="border-t p-4 flex justify-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleSelectLRCFile}
+            className="gap-2"
+          >
+            <Upload className="h-4 w-4" />
+            选择LRC文件
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setIsEditingLyrics(true)}
+            className="gap-2"
+          >
+            <Edit className="h-4 w-4" />
+            导入文本编辑
           </Button>
         </div>
       )}

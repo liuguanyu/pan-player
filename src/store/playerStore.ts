@@ -28,6 +28,7 @@ interface PlayerState {
   lyrics: string | null;
   parsedLyrics: LyricLine[] | null;
   showLyrics: boolean;
+  isEditingLyrics: boolean; // 是否处于歌词编辑模式
   
   // 音频可视化
   showVisualizer: boolean;
@@ -62,6 +63,10 @@ interface PlayerState {
   setLyrics: (lyrics: string | null) => void;
   setParsedLyrics: (parsedLyrics: LyricLine[] | null) => void;
   setShowLyrics: (show: boolean) => void;
+  setIsEditingLyrics: (isEditing: boolean) => void;
+  updateLyricLine: (id: string, updates: Partial<LyricLine>) => void;
+  addLyricLine: (time: number, text?: string) => string;
+  deleteLyricLine: (id: string) => void;
   
   // 音频可视化方法
   setShowVisualizer: (show: boolean) => void;
@@ -90,6 +95,7 @@ export const usePlayerStore = create<PlayerState>()(
       lyrics: null,
       parsedLyrics: null,
       showLyrics: false,
+      isEditingLyrics: false,
       showVisualizer: false,
       visualizationType: 'bars',
       
@@ -266,6 +272,31 @@ export const usePlayerStore = create<PlayerState>()(
       setLyrics: (lyrics) => set({ lyrics }),
       setParsedLyrics: (parsedLyrics) => set({ parsedLyrics }),
       setShowLyrics: (showLyrics) => set({ showLyrics }),
+      setIsEditingLyrics: (isEditingLyrics) => set({ isEditingLyrics }),
+      
+      // 更新单个歌词行
+      updateLyricLine: (id, updates) => set((state) => ({
+        parsedLyrics: state.parsedLyrics?.map(line =>
+          line.id === id ? { ...line, ...updates } : line
+        ) || null
+      })),
+      
+      // 添加新歌词行
+      addLyricLine: (time, text = '') => {
+        const id = Date.now().toString(36) + Math.random().toString(36).substr(2);
+        set((state) => ({
+          parsedLyrics: [
+            ...(state.parsedLyrics || []),
+            { id, time, text, isInterlude: false }
+          ]
+        }));
+        return id;
+      },
+      
+      // 删除歌词行
+      deleteLyricLine: (id) => set((state) => ({
+        parsedLyrics: state.parsedLyrics?.filter(line => line.id !== id) || null
+      })),
       
       // 音频可视化方法
       setShowVisualizer: (showVisualizer) => set((state) => {
