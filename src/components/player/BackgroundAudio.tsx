@@ -218,6 +218,7 @@ export const BackgroundAudio = () => {
       audioContextService.init(audioRef.current);
       
       audioRef.current.volume = volume;
+      audioRef.current.playbackRate = playbackRate; // 保持播放速率
       if (isPlaying) {
         audioRef.current.play().catch(e => {
           if (e.name !== 'AbortError') console.error("HTML5 Play error", e);
