@@ -78,4 +78,31 @@
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+
+  /* 自定义滚动条样式 - 基于Figma设计稿 */
+  /* Webkit浏览器(Chrome, Safari, Edge) */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 8px 0;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #d8e0e8;
+    border-radius: 13px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #c4cdd6;
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #d8e0e8 transparent;
+  }
 }
