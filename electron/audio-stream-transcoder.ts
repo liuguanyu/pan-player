@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
+import logger from './logger';
 
 // 设置 ffmpeg 二进制路径
 let ffmpegPath = ffmpegStatic;
@@ -32,10 +33,10 @@ if (app && !app.isPackaged) {
 }
 
 if (ffmpegPath) {
-  console.log('[Transcoder] Setting ffmpeg path:', ffmpegPath);
+  logger.log('[Transcoder] Setting ffmpeg path:', ffmpegPath);
   ffmpeg.setFfmpegPath(ffmpegPath);
 } else {
-  console.error('[Transcoder] Failed to find ffmpeg path');
+  logger.error('[Transcoder] Failed to find ffmpeg path');
 }
 
 // 存储临时文件路径,便于清理
@@ -48,7 +49,7 @@ function detectAudioCodec(url: string): Promise<string | null> {
   return new Promise((resolve) => {
     ffmpeg.ffprobe(url, (err, metadata) => {
       if (err) {
-        console.error('[编码检测失败]', err.message);
+        logger.error('[编码检测失败]', err.message);
         resolve(null);
         return;
       }
@@ -56,10 +57,10 @@ function detectAudioCodec(url: string): Promise<string | null> {
       // 查找音频流
       const audioStream = metadata.streams.find(s => s.codec_type === 'audio');
       if (audioStream && audioStream.codec_name) {
-        console.log('[检测到音频编码]', audioStream.codec_name);
+        logger.log('[检测到音频编码]', audioStream.codec_name);
         resolve(audioStream.codec_name);
       } else {
-        console.warn('[未找到音频流]');
+        logger.warn('[未找到音频流]');
         resolve(null);
       }
     });
@@ -76,7 +77,7 @@ export function setupAudioStreamTranscoder() {
       const codec = await detectAudioCodec(url);
       return { success: true, codec };
     } catch (error) {
-      console.error('[编码检测异常]', error);
+      logger.error('[编码检测异常]', error);
       return { success: false, codec: null };
     }
   });
@@ -86,7 +87,7 @@ export function setupAudioStreamTranscoder() {
     const tempWavPath = join(tmpdir(), `dupan-alac-${fileId}-${Date.now()}.wav`);
     tempFiles.add(tempWavPath);
 
-    console.log('[转码开始]', { url: url.substring(0, 100), tempWavPath });
+    logger.log('[转码开始]', { url: url.substring(0, 100), tempWavPath });
 
     try {
       // 创建 ffmpeg 命令 - 使用 WAV 格式，兼容性最好
@@ -97,7 +98,7 @@ export function setupAudioStreamTranscoder() {
         .audioChannels(2)
         .format('wav')
         .on('start', (commandLine: string) => {
-          console.log('[FFmpeg 命令]', commandLine);
+          logger.log('[FFmpeg 命令]', commandLine);
         })
         .on('progress', (progress: any) => {
           // 发送转码进度
@@ -109,14 +110,14 @@ export function setupAudioStreamTranscoder() {
           }
         })
         .on('end', () => {
-          console.log('[转码完成]', tempWavPath);
+          logger.log('[转码完成]', tempWavPath);
           event.reply(`transcode-complete-${fileId}`, {
             success: true,
             outputPath: tempWavPath
           });
         })
         .on('error', (err: Error) => {
-          console.error('[转码失败]', err.message);
+          logger.error('[转码失败]', err.message);
           event.reply(`transcode-fail-${fileId}`, err.message);
           
           // 清理失败的临时文件
@@ -126,7 +127,7 @@ export function setupAudioStreamTranscoder() {
             }
             tempFiles.delete(tempWavPath);
           } catch (cleanupErr) {
-            console.error('[清理失败]', cleanupErr);
+            logger.error('[清理失败]', cleanupErr);
           }
         });
 
@@ -134,7 +135,7 @@ export function setupAudioStreamTranscoder() {
       command.save(tempWavPath);
 
     } catch (error) {
-      console.error('[转码启动失败]', error);
+      logger.error('[转码启动失败]', error);
       event.reply(`transcode-fail-${fileId}`, (error as Error).message);
     }
   });
@@ -145,10 +146,10 @@ export function setupAudioStreamTranscoder() {
       if (tempFiles.has(filePath) && existsSync(filePath)) {
         unlinkSync(filePath);
         tempFiles.delete(filePath);
-        console.log('[已清理临时文件]', filePath);
+        logger.log('[已清理临时文件]', filePath);
       }
     } catch (error) {
-      console.error('[清理临时文件失败]', filePath, error);
+      logger.error('[清理临时文件失败]', filePath, error);
     }
   });
 }
@@ -161,10 +162,10 @@ export function cleanupAllTempFiles() {
     try {
       if (existsSync(filePath)) {
         unlinkSync(filePath);
-        console.log('[退出时清理临时文件]', filePath);
+        logger.log('[退出时清理临时文件]', filePath);
       }
     } catch (error) {
-      console.error('[退出时清理失败]', filePath, error);
+      logger.error('[退出时清理失败]', filePath, error);
     }
   }
   tempFiles.clear();

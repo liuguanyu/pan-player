@@ -3,6 +3,7 @@ import path from 'path';
 import axios from 'axios';
 import * as fs from 'fs';
 import { setupAudioStreamTranscoder, cleanupAllTempFiles } from './audio-stream-transcoder';
+import logger from './logger';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -19,7 +20,7 @@ function saveWindowConfig(config: any) {
   try {
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
   } catch (error) {
-    console.error('保存窗口配置失败:', error);
+    logger.error('保存窗口配置失败:', error);
   }
 }
 
@@ -31,7 +32,7 @@ function loadWindowConfig(): any {
       return JSON.parse(data);
     }
   } catch (error) {
-    console.error('读取窗口配置失败:', error);
+    logger.error('读取窗口配置失败:', error);
   }
   return null;
 }
@@ -275,12 +276,12 @@ function createWindow() {
 function registerIpcHandlers() {
   // 处理HTTP请求
   ipcMain.handle('http-request', async (_event: IpcMainInvokeEvent, config: any) => {
-    console.log('HTTP Request Config:', JSON.stringify(config, null, 2));
+    logger.log('HTTP Request Config:', JSON.stringify(config, null, 2));
     
     try {
       const response = await axios(config);
-      console.log('HTTP Response Status:', response.status);
-      console.log('HTTP Response Data:', JSON.stringify(response.data, null, 2));
+      logger.log('HTTP Response Status:', response.status);
+      logger.log('HTTP Response Data:', JSON.stringify(response.data, null, 2));
       
       return {
         data: response.data,
@@ -289,10 +290,10 @@ function registerIpcHandlers() {
         headers: response.headers,
       };
     } catch (error: any) {
-      console.error('HTTP Request Error:', error.message);
+      logger.error('HTTP Request Error:', error.message);
       if (error.response) {
-        console.error('Error Response Status:', error.response.status);
-        console.error('Error Response Data:', JSON.stringify(error.response.data, null, 2));
+        logger.error('Error Response Status:', error.response.status);
+        logger.error('Error Response Data:', JSON.stringify(error.response.data, null, 2));
       }
       return {
         error: true,
@@ -308,7 +309,7 @@ function registerIpcHandlers() {
 
   // 处理下载文件请求（用于音频转换）
   ipcMain.handle('download-file', async (_event: IpcMainInvokeEvent, url: string) => {
-    console.log('下载文件:', url);
+    logger.log('下载文件:', url);
     
     try {
       const response = await axios({
@@ -321,7 +322,7 @@ function registerIpcHandlers() {
         }
       });
       
-      console.log('文件下载成功，大小:', response.data.byteLength);
+      logger.log('文件下载成功，大小:', response.data.byteLength);
       
       // 将 ArrayBuffer 转换为 Uint8Array
       const uint8Array = new Uint8Array(response.data);
@@ -331,9 +332,9 @@ function registerIpcHandlers() {
         data: Array.from(uint8Array) // 转换为普通数组以便通过 IPC 传递
       };
     } catch (error: any) {
-      console.error('下载文件失败:', error.message);
+      logger.error('下载文件失败:', error.message);
       if (error.response) {
-        console.error('错误响应:', error.response.status);
+        logger.error('错误响应:', error.response.status);
       }
       return {
         success: false,
@@ -351,12 +352,12 @@ function registerIpcHandlers() {
       client_secret: 'XwXk28lcgoWLVlVLEkTMFxnqwA4onOLd'
     };
 
-    console.log('开始轮询设备码，参数:', params);
+    logger.log('开始轮询设备码，参数:', params);
 
     // 最多轮询60次，每次间隔5秒
     for (let i = 0; i < 60; i++) {
       try {
-        console.log(`第 ${i + 1} 次轮询...`);
+        logger.log(`第 ${i + 1} 次轮询...`);
         const response = await axios.get('https://openapi.baidu.com/oauth/2.0/token', {
           params,
           headers: {
@@ -364,14 +365,14 @@ function registerIpcHandlers() {
           }
         });
 
-        console.log('响应状态:', response.status);
-        console.log('响应数据:', response.data);
+        logger.log('响应状态:', response.status);
+        logger.log('响应数据:', response.data);
 
         const data = response.data;
 
         // 授权成功
         if (data.access_token) {
-          console.log('授权成功！');
+          logger.log('授权成功！');
           // 通知渲染进程授权成功
           event.sender.send('auth-success', data);
           return { success: true, data };
@@ -379,19 +380,19 @@ function registerIpcHandlers() {
 
         // 授权过期
         if (data.error === 'expired_token') {
-          console.error('授权已过期');
+          logger.error('授权已过期');
           return { success: false, error: 'expired_token' };
         }
 
         // 其他错误
         if (data.error && data.error !== 'authorization_pending') {
-          console.error('设备码授权失败:', data);
+          logger.error('设备码授权失败:', data);
           return { success: false, error: data.error };
         }
 
         // 等待用户授权
         if (data.error === 'authorization_pending') {
-          console.log('等待用户授权...');
+          logger.log('等待用户授权...');
         }
 
         // 等待5秒后继续轮询
@@ -399,21 +400,21 @@ function registerIpcHandlers() {
       } catch (error: any) {
         // 特殊处理 authorization_pending 错误
         if (error.response && error.response.data && error.response.data.error === 'authorization_pending') {
-          console.log('等待用户授权...');
+          logger.log('等待用户授权...');
           await new Promise((resolve) => setTimeout(resolve, 5000));
           continue;
         }
 
-        console.error('设备码授权失败:', error.message);
+        logger.error('设备码授权失败:', error.message);
         if (error.response) {
-          console.error('错误响应:', error.response.status, error.response.data);
+          logger.error('错误响应:', error.response.status, error.response.data);
         }
         // 继续轮询而不是退出
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
     }
 
-    console.error('设备码授权超时');
+    logger.error('设备码授权超时');
     return { success: false, error: 'timeout' };
   });
 }
@@ -434,7 +435,7 @@ app.whenReady().then(() => {
     // URL 解码以处理路径中的特殊字符
     const filePath = decodeURIComponent(url);
     
-    console.log('[Protocol] 请求本地音频文件:', filePath);
+    logger.log('[Protocol] 请求本地音频文件:', filePath);
     
     callback({ path: filePath });
   });
@@ -457,7 +458,7 @@ app.whenReady().then(() => {
       details.requestHeaders['Referer'] = 'https://pan.baidu.com/';
       
       // 添加调试日志
-      console.log('拦截请求:', details.url.substring(0, 100));
+      logger.log('拦截请求:', details.url.substring(0, 100));
       
       callback({ requestHeaders: details.requestHeaders });
     }
@@ -493,7 +494,7 @@ app.whenReady().then(() => {
 
   // 防止系统休眠，确保后台播放
   const id = powerSaveBlocker.start('prevent-app-suspension');
-  console.log('Power Save Blocker ID:', id);
+  logger.log('Power Save Blocker ID:', id);
 });
 
 // 注册全局快捷键
@@ -541,7 +542,7 @@ function unregisterGlobalShortcuts() {
 app.on('window-all-closed', () => {
   // 不再自动退出，因为有系统托盘
   // 用户需要通过托盘菜单的"退出"选项来真正退出应用
-  console.log('所有窗口已关闭，应用继续在后台运行');
+  logger.log('所有窗口已关闭，应用继续在后台运行');
 });
 
 // 应用退出前清理

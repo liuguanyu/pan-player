@@ -27,11 +27,16 @@ export function LoginDialog() {
   }, [isAuthenticated]);
 
   // 当对话框打开且未登录时，自动获取设备码
+  // 但只在初次打开或明确需要时才获取，避免用户已有有效凭证时不必要的轮询
   React.useEffect(() => {
-    if (isOpen && !isAuthenticated && !deviceCode && !loading) {
-      handleLogin();
+    if (isOpen && !isAuthenticated && !deviceCode && !loading && !polling) {
+      // 检查是否有存储的认证信息，如果有则不自动获取设备码
+      const hasStoredAuth = baiduAuth.isAuthenticated();
+      if (!hasStoredAuth) {
+        handleLogin();
+      }
     }
-  }, [isOpen, isAuthenticated, deviceCode, loading]);
+  }, [isOpen, isAuthenticated, deviceCode, loading, polling]);
 
   // 监听主进程的授权成功事件
   React.useEffect(() => {
