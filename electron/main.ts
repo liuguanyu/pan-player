@@ -9,6 +9,10 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 let configPath: string = '';
+let currentSongName: string = '';
+let marqueeTimer: NodeJS.Timeout | null = null;
+let marqueeOffset: number = 0;
+let isMuted: boolean = false;
 
 // 初始化配置路径
 function initConfigPath() {
@@ -37,34 +41,39 @@ function loadWindowConfig(): any {
   return null;
 }
 
-// 创建系统托盘
-function createTray() {
-  // 创建托盘图标
-  // 使用内置的图标或者自定义图标
-  const iconPath = process.platform === 'win32'
-    ? path.join(__dirname, '../public/icon.ico') // Windows 使用 .ico
-    : path.join(__dirname, '../public/icon.png'); // macOS 和 Linux 使用 .png
-  
-  // 如果找不到图标文件，使用 nativeImage 创建一个简单的图标
-  let icon;
-  try {
-    icon = nativeImage.createFromPath(iconPath);
-    if (icon.isEmpty()) {
-      // 如果图标为空，创建一个简单的图标
-      icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAICSURBVFhH7ZbPK0RhFMaf8WMkC2VhYWFhYWNhY2VhYWFjY2NlZWVlZWVlZWVlZWNjY2NlZWVlY2NjY2VlZWFhYWFhYWFhYeH7nHPvzJ25d+69M2bB4lNP5z3vec973nPu3Dv/iYiIiIiIiP4XVVVVWl5eVnt7u7q7u9Xb26v+/n4NDAxocHBQQ0NDGh4e1sjIiEZHRzU2Nqbx8XFNTExocnJSU1NTmp6e1szMjGZnZzU3N6f5+XktLCxocXFRS0tLWl5e1srKilarq6taX1/X5uamtra2tL29rZ2dHe3u7mpvb0/7+/s6ODjQ4eGhjo6OdHx8rJOTE52enurs7Ezn5+e6uLjQ5eWlrq6udH19rZubG93e3uru7k739/d6eHjQ4+Ojnp6e9Pz8rJeXF72+vurt7U3v7+/6+PjQ5+enXKAL5HdCuoDugO6B7oMehB6FHoeeRJ6lO6V7pfulB6aHpoemx6bHp8enR5AjyJHkWHI0OZ4c8XsE/w8gRAAiChARiKhARAYiQxAZishSRJoiWRRpisRRJI4idRSpo8gdRfIoEkmRTIp0UiSUIqUUSaZINCmiTRFxiihUvgdVuKjCRRUuqnBRhYsqXFThogrnVbiv4oGKJyqeqXiu4qWK1yreqniv4qOKLyr+qPir4r+K/yre/xERERERERH9ND4BEcN3yPIIZykAAAAASUVORK5CYII=');
-    }
-  } catch (error) {
-    // 创建默认图标
-    icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAICSURBVFhH7ZbPK0RhFMaf8WMkC2VhYWFhYWNhY2VhYWFjY2NlZWVlZWVlZWVlZWNjY2NlZWVlY2NjY2VlZWFhYWFhYWFhYeH7nHPvzJ25d+69M2bB4lNP5z3vec973nPu3Dv/iYiIiIiIiP4XVVVVWl5eVnt7u7q7u9Xb26v+/n4NDAxocHBQQ0NDGh4e1sjIiEZHRzU2Nqbx8XFNTExocnJSU1NTmp6e1szMjGZnZzU3N6f5+XktLCxocXFRS0tLWl5e1srKilarq6taX1/X5uamtra2tL29rZ2dHe3u7mpvb0/7+/s6ODjQ4eGhjo6OdHx8rJOTE52enurs7Ezn5+e6uLjQ5eWlrq6udH19rZubG93e3uru7k739/d6eHjQ4+Ojnp6e9Pz8rJeXF72+vurt7U3v7+/6+PjQ5+enXKAL5HdCuoDugO6B7oMehB6FHoeeRJ6lO6V7pfulB6aHpoemx6bHp8enR5AjyJHkWHI0OZ4c8XsE/w8gRAAiChARiKhARAYiQxAZishSRJoiWRRpisRRJI4idRSpo8gdRfIoEkmRTIp0UiSUIqUUSaZINCmiTRFxiihUvgdVuKjCRRUuqnBRhYsqXFThogrnVbiv4oGKJyqeqXiu4qWK1yreqniv4qOKLyr+qPir4r+K/yre/xERERERERH9ND4BEcN3yPIIZykAAAAASUVORK5CYII=');
+// 获取跑马灯显示文本（最多显示30个字符，超出部分滚动）
+function getMarqueeText(text: string, maxLength: number = 30): string {
+  if (text.length <= maxLength) {
+    return text;
   }
-
-  tray = new Tray(icon);
   
-  // 设置托盘提示文字
-  tray.setToolTip('百度网盘播放器');
+  // 添加间隔符
+  const fullText = text + '    ';
+  const textLength = fullText.length;
+  
+  // 循环滚动
+  const displayText = fullText.substring(marqueeOffset) + fullText.substring(0, marqueeOffset);
+  
+  return displayText.substring(0, maxLength);
+}
 
-  // 创建托盘菜单
+// 更新托盘菜单
+function updateTrayMenu() {
+  if (!tray) return;
+  
+  const songDisplay = currentSongName
+    ? `正在播放: ${getMarqueeText(currentSongName)}`
+    : '度盘播放器';
+  
   const contextMenu = Menu.buildFromTemplate([
+    {
+      label: songDisplay,
+      enabled: false,
+      icon: currentSongName ? undefined : undefined
+    },
+    {
+      type: 'separator'
+    },
     {
       label: '显示窗口',
       click: () => {
@@ -94,10 +103,26 @@ function createTray() {
       }
     },
     {
+      label: '播放/暂停',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.webContents.send('player-control', 'play-pause');
+        }
+      }
+    },
+    {
       label: '下一曲',
       click: () => {
         if (mainWindow) {
           mainWindow.webContents.send('player-control', 'next');
+        }
+      }
+    },
+    {
+      label: isMuted ? '取消静音' : '静音',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.webContents.send('player-control', 'mute');
         }
       }
     },
@@ -113,8 +138,31 @@ function createTray() {
     }
   ]);
 
-  // 设置托盘菜单
   tray.setContextMenu(contextMenu);
+}
+
+// 创建系统托盘
+function createTray() {
+  // 创建托盘图标
+  const iconPath = process.platform === 'win32'
+    ? path.join(__dirname, '../public/icon.ico')
+    : path.join(__dirname, '../public/icon.png');
+  
+  let icon;
+  try {
+    icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) {
+      icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAICSURBVFhH7ZbPK0RhFMaf8WMkC2VhYWFhYWNhY2VhYWFjY2NlZWVlZWVlZWVlZWNjY2NlZWVlY2NjY2VlZWFhYWFhYWFhYeH7nHPvzJ25d+69M2bB4lNP5z3vec973nPu3Dv/iYiIiIiIiP4XVVVVWl5eVnt7u7q7u9Xb26v+/n4NDAxocHBQQ0NDGh4e1sjIiEZHRzU2Nqbx8XFNTExocnJSU1NTmp6e1szMjGZnZzU3N6f5+XktLCxocXFRS0tLWl5e1srKilarq6taX1/X5uamtra2tL29rZ2dHe3u7mpvb0/7+/s6ODjQ4eGhjo6OdHx8rJOTE52enurs7Ezn5+e6uLjQ5eWlrq6udH19rZubG93e3uru7k739/d6eHjQ4+Ojnp6e9Pz8rJeXF72+vurt7U3v7+/6+PjQ5+enXKAL5HdCuoDugO6B7oMehB6FHoeeRJ6lO6V7pfulB6aHpoemx6bHp8enR5AjyJHkWHI0OZ4c8XsE/w8gRAAiChARiKhARAYiQxAZishSRJoiWRRpisRRJI4idRSpo8gdRfIoEkmRTIp0UiSUIqUUSaZINCmiTRFxiihUvgdVuKjCRRUuqnBRhYsqXFThogrnVbiv4oGKJyqeqXiu4qWK1yreqniv4qOKLyr+qPir4r+K/yre/xERERERERH9ND4BEcN3yPIIZykAAAAASUVORK5CYII=');
+    }
+  } catch (error) {
+    icon = nativeImage.createFromDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAICSURBVFhH7ZbPK0RhFMaf8WMkC2VhYWFhYWNhY2VhYWFjY2NlZWVlZWVlZWVlZWNjY2NlZWVlY2NjY2VlZWFhYWFhYWFhYeH7nHPvzJ25d+69M2bB4lNP5z3vec973nPu3Dv/iYiIiIiIiP4XVVVVWl5eVnt7u7q7u9Xb26v+/n4NDAxocHBQQ0NDGh4e1sjIiEZHRzU2Nqbx8XFNTExocnJSU1NTmp6e1szMjGZnZzU3N6f5+XktLCxocXFRS0tLWl5e1srKilarq6taX1/X5uamtra2tL29rZ2dHe3u7mpvb0/7+/s6ODjQ4eGhjo6OdHx8rJOTE52enurs7Ezn5+e6uLjQ5eWlrq6udH19rZubG93e3uru7k739/d6eHjQ4+Ojnp6e9Pz8rJeXF72+vurt7U3v7+/6+PjQ5+enXKAL5HdCuoDugO6B7oMehB6FHoeeRJ6lO6V7pfulB6aHpoemx6bHp8enR5AjyJHkWHI0OZ4c8XsE/w8gRAAiChARiKhARAYiQxAZishSRJoiWRRpisRRJI4idRSpo8gdRfIoEkmRTIp0UiSUIqUUSaZINCmiTRFxiihUvgdVuKjCRRUuqnBRhYsqXFThogrnVbiv4oGKJyqeqXiu4qWK1yreqniv4qOKLyr+qPir4r+K/yre/xERERERERH9ND4BEcN3yPIIZykAAAAASUVORK5CYII=');
+  }
+
+  tray = new Tray(icon);
+  tray.setToolTip('百度网盘播放器');
+
+  // 初始化菜单
+  updateTrayMenu();
 
   // 双击托盘图标显示/隐藏窗口
   tray.on('double-click', () => {
@@ -269,6 +317,36 @@ function createWindow() {
       
       // 通知渲染进程模式已切换
       mainWindow.webContents.send('mini-mode-changed', false);
+    }
+  });
+
+  // 监听当前播放歌曲更新
+  ipcMain.on('update-current-song', (_event, songName: string) => {
+    currentSongName = songName;
+    marqueeOffset = 0;
+    
+    // 清除旧的定时器
+    if (marqueeTimer) {
+      clearInterval(marqueeTimer);
+      marqueeTimer = null;
+    }
+    
+    // 如果歌曲名超过30个字符，启动跑马灯
+    if (songName && songName.length > 30) {
+      marqueeTimer = setInterval(() => {
+        marqueeOffset = (marqueeOffset + 1) % (songName.length + 4);
+        updateTrayMenu();
+      }, 300); // 每300ms滚动一次
+    }
+    
+    updateTrayMenu();
+  });
+  
+  // 监听渲染进程的静音状态更新
+  ipcMain.on('update-mute-state', (_event, muted: boolean) => {
+    if (isMuted !== muted) {
+      isMuted = muted;
+      updateTrayMenu();
     }
   });
 }
@@ -548,6 +626,11 @@ app.on('window-all-closed', () => {
 // 应用退出前清理
 app.on('before-quit', () => {
   isQuitting = true;
+  // 清理跑马灯定时器
+  if (marqueeTimer) {
+    clearInterval(marqueeTimer);
+    marqueeTimer = null;
+  }
   // 取消注册全局快捷键
   unregisterGlobalShortcuts();
   // 清理所有临时音频文件

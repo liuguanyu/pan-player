@@ -108,11 +108,20 @@ export const usePlayerStore = create<PlayerState>()(
       setPlaybackRate: (playbackRate) => set({ playbackRate }),
       
       // 歌曲控制方法
-      setCurrentSong: (currentSong) => set({
-        currentSong,
-        parsedLyrics: null, // 切换歌曲时清空歌词
-        lyrics: null
-      }),
+      setCurrentSong: (currentSong) => {
+        set({
+          currentSong,
+          parsedLyrics: null, // 切换歌曲时清空歌词
+          lyrics: null
+        });
+        
+        // 通知主进程更新当前歌曲（用于系统托盘显示）
+        if (currentSong && window.electronAPI?.updateCurrentSong) {
+          window.electronAPI.updateCurrentSong(currentSong.server_filename);
+        } else if (!currentSong && window.electronAPI?.updateCurrentSong) {
+          window.electronAPI.updateCurrentSong('');
+        }
+      },
       playNext: () => {
         const { currentPlaylist, playlists, currentSong, playbackMode } = get();
         
@@ -151,6 +160,10 @@ export const usePlayerStore = create<PlayerState>()(
           });
           // 添加到最近播放
           get().addRecentSong(nextSong);
+          // 通知主进程更新当前歌曲
+          if (window.electronAPI?.updateCurrentSong) {
+            window.electronAPI.updateCurrentSong(nextSong.server_filename);
+          }
         }
       },
       playPrevious: () => {
@@ -191,6 +204,10 @@ export const usePlayerStore = create<PlayerState>()(
           });
           // 添加到最近播放
           get().addRecentSong(prevSong);
+          // 通知主进程更新当前歌曲
+          if (window.electronAPI?.updateCurrentSong) {
+            window.electronAPI.updateCurrentSong(prevSong.server_filename);
+          }
         }
       },
       

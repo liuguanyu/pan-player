@@ -26,6 +26,8 @@ const App: React.FC = () => {
   const playbackMode = usePlayerStore(state => state.playbackMode);
   const setPlaybackMode = usePlayerStore(state => state.setPlaybackMode);
   const [isMiniMode, setIsMiniMode] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [previousVolume, setPreviousVolume] = useState(0.7);
 
   // 应用启动时重置可视化状态
   useEffect(() => {
@@ -81,7 +83,17 @@ const App: React.FC = () => {
             setIsPlaying(!isPlaying);
             break;
           case 'mute':
-            setVolume(volume === 0 ? 0.7 : 0); // 切换静音状态
+            // 切换静音状态
+            const newMutedState = !isMuted;
+            if (newMutedState) {
+              // 静音，保存当前音量并设置为0
+              setPreviousVolume(volume);
+              setVolume(0);
+            } else {
+              // 取消静音，恢复之前的音量
+              setVolume(previousVolume);
+            }
+            setIsMuted(newMutedState);
             break;
           case 'volume-up':
             setVolume(Math.min(1, volume + 0.1)); // 增加音量
@@ -102,7 +114,33 @@ const App: React.FC = () => {
       });
       return cleanup;
     }
-  }, [playNext, playPrevious, isPlaying, setIsPlaying, volume, setVolume, playbackMode, setPlaybackMode]);
+  }, [playNext, playPrevious, isPlaying, setIsPlaying, volume, setVolume, playbackMode, setPlaybackMode, isMuted, previousVolume]);
+
+  // 当isMuted状态改变时，同步到主进程
+  useEffect(() => {
+    if (window.electronAPI?.updateMuteState) {
+      window.electronAPI.updateMuteState(isMuted);
+    }
+  }, [isMuted]);
+
+  // 监听来自主进程的静音状态变化
+  useEffect(() => {
+    if (window.electronAPI?.onMuteChange) {
+      const cleanup = window.electronAPI.onMuteChange((muted: boolean) => {
+        if (muted !== isMuted) {
+          if (muted) {
+            setPreviousVolume(volume);
+            setVolume(0);
+            setIsMuted(true);
+          } else {
+            setVolume(previousVolume);
+            setIsMuted(false);
+          }
+        }
+      });
+      return cleanup;
+    }
+  }, [isMuted, volume, previousVolume, setVolume]);
 
   // 迷你模式下直接渲染 MiniPlayer
   if (isMiniMode) {

@@ -81,4 +81,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 检测音频编码
   detectAudioCodec: (url: string) => ipcRenderer.invoke('detect-audio-codec', url),
+  
+  // 更新当前歌曲信息（用于系统托盘显示）
+  updateCurrentSong: (songName: string) => ipcRenderer.send('update-current-song', songName),
+  
+  // 静音控制 - 通知主进程当前的静音状态
+  updateMuteState: (isMuted: boolean) => ipcRenderer.send('update-mute-state', isMuted),
+  
+  // 监听静音状态变化（从托盘菜单触发）
+  onMuteChange: (callback: (isMuted: boolean) => void) => {
+    const handler = (_event: any, isMuted: boolean) => callback(isMuted);
+    ipcRenderer.on('mute-changed', handler);
+    return () => ipcRenderer.removeListener('mute-changed', handler);
+  },
 });

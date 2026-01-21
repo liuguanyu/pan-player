@@ -35,6 +35,13 @@ export interface ElectronAPI {
   onTranscodeProgress: (fileId: string, callback: (progress: any) => void) => () => void;
   cleanupTempAudio: (filePath: string) => void;
   detectAudioCodec: (url: string) => Promise<{ success: boolean; codec: string | null }>;
+  
+  // 更新当前歌曲信息（用于系统托盘显示）
+  updateCurrentSong: (songName: string) => void;
+  
+  // 静音控制
+  updateMuteState: (isMuted: boolean) => void;
+  onMuteChange: (callback: (isMuted: boolean) => void) => () => void;
 }
 
 declare global {
