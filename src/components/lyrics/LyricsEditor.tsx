@@ -2,18 +2,20 @@ import React, { useState, useRef, useEffect } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Download,
   Upload,
   Trash2,
   FileText,
-  Music
+  Music,
+  Type
 } from 'lucide-react';
 import { parsePlainText, generateLRC, formatLRCTime, parseLRC } from '@/lib/lrc-parser';
 
 export const LyricsEditor: React.FC = () => {
-  const { 
-    parsedLyrics, 
+  const {
+    parsedLyrics,
     setParsedLyrics,
     currentTime,
     updateLyricLine,
@@ -23,6 +25,8 @@ export const LyricsEditor: React.FC = () => {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
+  const [textInput, setTextInput] = useState('');
+  const [showTextInput, setShowTextInput] = useState(false);
   const editInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -108,6 +112,20 @@ export const LyricsEditor: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  // 从文本框导入歌词
+  const handleImportFromText = () => {
+    if (!textInput.trim()) {
+      alert('请先输入歌词文本');
+      return;
+    }
+    
+    const lyrics = parsePlainText(textInput);
+    setParsedLyrics(lyrics);
+    setTextInput('');
+    setShowTextInput(false);
+    alert('歌词导入成功！请为每行设置时间。');
+  };
+
   // 添加间奏
   const handleAddInterlude = () => {
     const id = addLyricLine(currentTime, '♪ 间奏 ♪');
@@ -165,11 +183,21 @@ export const LyricsEditor: React.FC = () => {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setShowTextInput(!showTextInput)}
+            className="gap-1"
+          >
+            <Type className="h-4 w-4" />
+            {showTextInput ? '隐藏输入框' : '显示输入框'}
+          </Button>
+          
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleImportText}
             className="gap-1"
           >
             <FileText className="h-4 w-4" />
-            导入文本
+            导入文本文件
           </Button>
           
           <Button
@@ -179,7 +207,7 @@ export const LyricsEditor: React.FC = () => {
             className="gap-1"
           >
             <Upload className="h-4 w-4" />
-            导入LRC
+            导入LRC文件
           </Button>
           
           <Button
@@ -217,6 +245,33 @@ export const LyricsEditor: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* 文本输入区 */}
+      {showTextInput && (
+        <div className="mb-4 p-4 border rounded bg-muted/30">
+          <div className="mb-2 flex items-center justify-between">
+            <label className="text-sm font-medium">
+              直接输入或粘贴歌词文本（每行一句歌词）
+            </label>
+            <Button
+              size="sm"
+              onClick={handleImportFromText}
+              disabled={!textInput.trim()}
+            >
+              导入
+            </Button>
+          </div>
+          <Textarea
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
+            placeholder="在此粘贴或输入歌词文本，每行一句歌词...&#10;&#10;例如：&#10;第一句歌词&#10;第二句歌词&#10;第三句歌词"
+            className="min-h-[120px] font-mono"
+          />
+          <p className="text-xs text-muted-foreground mt-2">
+            支持多行文本，每行将被识别为一句歌词。导入后可以为每句歌词设置时间轴。
+          </p>
+        </div>
+      )}
 
       {/* 歌词编辑区 */}
       <div 
