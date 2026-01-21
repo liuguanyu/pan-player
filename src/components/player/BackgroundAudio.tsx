@@ -20,6 +20,7 @@ export const BackgroundAudio = () => {
     volume,
     playbackRate,
     currentSong,
+    isEditingLyrics,
     setIsPlaying,
     setCurrentTime,
     setDuration,
@@ -238,6 +239,12 @@ export const BackgroundAudio = () => {
   const handleEnded = () => {
     if (activePlayer === 'html5' || activePlayer === 'transcoded') {
       console.log('播放结束');
+      // 如果正在编辑歌词，则不自动切换歌曲
+      if (isEditingLyrics) {
+        console.log('歌词编辑模式下，暂停自动切换歌曲');
+        setIsPlaying(false);
+        return;
+      }
       playNext();
     }
   };
