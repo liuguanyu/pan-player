@@ -3,8 +3,9 @@ import { usePlayerStore } from '@/store/playerStore';
 import { PlaylistItem } from '@/types/file';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Trash2, Search, X } from 'lucide-react';
+import { Trash2, Search, X, Download } from 'lucide-react';
 import { playlistService } from '@/services/playlist.service';
+import { baiduAPI } from '@/services/baidu-api.service';
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B';
@@ -33,6 +34,7 @@ interface SongRowProps {
   isCurrentSearchResult?: boolean;
   onDoubleClick: (song: PlaylistItem) => void;
   onRemove: (e: React.MouseEvent, song: PlaylistItem) => void;
+  onDownload: (e: React.MouseEvent, song: PlaylistItem) => void;
   rowRef?: ((el: HTMLTableRowElement | null) => void) | React.RefObject<HTMLTableRowElement>;
 }
 
@@ -45,6 +47,7 @@ const SongRow = memo(({
   isCurrentSearchResult,
   onDoubleClick,
   onRemove,
+  onDownload,
   rowRef
 }: SongRowProps) => {
   return (
@@ -63,8 +66,11 @@ const SongRow = memo(({
       </td>
       <td className="py-2 px-2 overflow-hidden">
         <div className="truncate font-medium" title={song.server_filename}>{song.server_filename}</div>
-        <div className="text-xs text-muted-foreground truncate">
-          {new Date(song.server_mtime * 1000).toLocaleDateString()}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="truncate flex-1" title={song.path}>{song.path}</span>
+          <span className="shrink-0 text-right min-w-[80px]">
+            {new Date(song.server_mtime * 1000).toLocaleDateString()}
+          </span>
         </div>
       </td>
       <td className="py-2 px-2 text-center text-sm text-muted-foreground w-16">
@@ -73,16 +79,27 @@ const SongRow = memo(({
       <td className="py-2 px-2 text-right text-sm text-muted-foreground w-20">
         {formatFileSize(song.size)}
       </td>
-      <td className="py-2 px-2 text-center w-8">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={(e) => onRemove(e, song)}
-          title="从列表移除"
-        >
-          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-        </Button>
+      <td className="py-2 px-2 text-center w-16">
+        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={(e) => onDownload(e, song)}
+            title="下载到本地"
+          >
+            <Download className="h-4 w-4 text-muted-foreground hover:text-primary" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={(e) => onRemove(e, song)}
+            title="从列表移除"
+          >
+            <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+          </Button>
+        </div>
       </td>
     </tr>
   );
@@ -107,6 +124,10 @@ export const SongList = () => {
   const [searchResults, setSearchResults] = useState<PlaylistItem[]>([]);
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // 下载相关状态
+  const [downloadingFiles, setDownloadingFiles] = useState<Set<number>>(new Set());
+  const [downloadProgress, setDownloadProgress] = useState<Map<string, number>>(new Map());
 
   // 用于引用当前播放歌曲的行元素
   const currentSongRowRef = useRef<HTMLTableRowElement>(null);
@@ -274,6 +295,70 @@ export const SongList = () => {
     }
   };
 
+  // 下载歌曲到本地
+  const handleDownloadSong = async (e: React.MouseEvent, song: PlaylistItem) => {
+    e.stopPropagation();
+    
+    // 检查是否正在下载
+    if (downloadingFiles.has(song.fs_id)) {
+      console.log('文件正在下载中:', song.server_filename);
+      return;
+    }
+
+    try {
+      // 标记为正在下载
+      setDownloadingFiles(prev => new Set(prev).add(song.fs_id));
+      
+      // 获取下载链接
+      const downloadLink = await baiduAPI.getDownloadLink(song.fs_id);
+      if (!downloadLink) {
+        console.error('无法获取下载链接');
+        alert('获取下载链接失败，请重试');
+        return;
+      }
+
+      // 监听下载进度
+      const cleanup = window.electronAPI.onDownloadProgress((progress) => {
+        if (progress.fileName === song.server_filename) {
+          setDownloadProgress(prev => new Map(prev).set(song.server_filename, progress.progress));
+        }
+      });
+
+      // 调用下载API
+      const result = await window.electronAPI.downloadFileToLocal(downloadLink, song.server_filename);
+      
+      // 清理进度监听
+      cleanup();
+      
+      if (result.success) {
+        console.log('文件下载成功:', result.filePath);
+        alert(`文件已保存到: ${result.filePath}`);
+      } else if (result.canceled) {
+        console.log('用户取消下载');
+      } else {
+        console.error('下载失败:', result.error);
+        alert(`下载失败: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('下载过程出错:', error);
+      alert('下载过程出错，请重试');
+    } finally {
+      // 移除下载标记
+      setDownloadingFiles(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(song.fs_id);
+        return newSet;
+      });
+      
+      // 清除进度
+      setDownloadProgress(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(song.server_filename);
+        return newMap;
+      });
+    }
+  };
+
   if (songs.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
@@ -318,10 +403,10 @@ export const SongList = () => {
         <thead className="sticky top-0 bg-background border-b z-10">
           <tr className="text-sm text-muted-foreground">
             <th className="w-12 py-2 px-2 text-center font-medium">#</th>
-            <th className="py-2 px-2 text-left font-medium" style={{ width: 'calc(100% - 14rem)' }}>标题</th>
+            <th className="py-2 px-2 text-left font-medium" style={{ width: 'calc(100% - 16rem)' }}>标题</th>
             <th className="w-16 py-2 px-2 text-center font-medium">时长</th>
             <th className="w-20 py-2 px-2 text-right font-medium">大小</th>
-            <th className="w-8 py-2 px-2"></th>
+            <th className="w-16 py-2 px-2 text-center font-medium">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -341,6 +426,7 @@ export const SongList = () => {
                 isCurrentSearchResult={isCurrentSearchResult}
                 onDoubleClick={handleSongDoubleClick}
                 onRemove={handleRemoveSong}
+                onDownload={handleDownloadSong}
                 rowRef={(el: HTMLTableRowElement | null) => {
                   if (isPlaying && el) {
                     (currentSongRowRef as React.MutableRefObject<HTMLTableRowElement | null>).current = el;

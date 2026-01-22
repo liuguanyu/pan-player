@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, powerSaveBlocker, IpcMainInvokeEvent, protocol, globalShortcut } from 'electron';
+import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, powerSaveBlocker, IpcMainInvokeEvent, protocol, globalShortcut, dialog } from 'electron';
 import path from 'path';
 import axios from 'axios';
 import * as fs from 'fs';
@@ -494,6 +494,82 @@ function registerIpcHandlers() {
 
     logger.error('设备码授权超时');
     return { success: false, error: 'timeout' };
+  });
+
+  // 处理下载文件到本地
+  ipcMain.handle('download-file-to-local', async (_event: IpcMainInvokeEvent, url: string, fileName: string) => {
+    logger.log('开始下载文件到本地:', fileName);
+    
+    try {
+      // 打开保存对话框
+      const result = await dialog.showSaveDialog({
+        title: '保存文件',
+        defaultPath: fileName,
+        filters: [
+          { name: '音频文件', extensions: ['mp3', 'm4a', 'flac', 'wav', 'ogg', 'aac', 'wma', 'ape', 'alac'] },
+          { name: '所有文件', extensions: ['*'] }
+        ]
+      });
+
+      if (result.canceled || !result.filePath) {
+        logger.log('用户取消下载');
+        return { success: false, canceled: true };
+      }
+
+      const savePath = result.filePath;
+      logger.log('保存路径:', savePath);
+
+      // 下载文件
+      const response = await axios({
+        method: 'GET',
+        url,
+        responseType: 'stream',
+        headers: {
+          'User-Agent': 'pan.baidu.com',
+          'Referer': 'https://pan.baidu.com/'
+        },
+        onDownloadProgress: (progressEvent) => {
+          const percentCompleted = progressEvent.total
+            ? Math.round((progressEvent.loaded * 100) / progressEvent.total)
+            : 0;
+          
+          // 发送进度更新
+          if (mainWindow) {
+            mainWindow.webContents.send('download-progress', {
+              fileName,
+              progress: percentCompleted,
+              loaded: progressEvent.loaded,
+              total: progressEvent.total
+            });
+          }
+        }
+      });
+
+      // 创建写入流
+      const writer = fs.createWriteStream(savePath);
+      
+      // 将响应数据写入文件
+      response.data.pipe(writer);
+
+      // 等待写入完成
+      await new Promise<void>((resolve, reject) => {
+        writer.on('finish', () => resolve());
+        writer.on('error', reject);
+      });
+
+      logger.log('文件下载成功:', savePath);
+      
+      return {
+        success: true,
+        filePath: savePath
+      };
+    } catch (error: any) {
+      logger.error('下载文件失败:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
   });
 }
 

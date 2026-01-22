@@ -11,6 +11,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 下载文件（保留以兼容旧代码）
   downloadFile: (url: string) => ipcRenderer.invoke('download-file', url),
   
+  // 下载文件到本地
+  downloadFileToLocal: (url: string, fileName: string) => ipcRenderer.invoke('download-file-to-local', url, fileName),
+  
+  // 监听下载进度
+  onDownloadProgress: (callback: (progress: { fileName: string; progress: number; loaded: number; total?: number }) => void) => {
+    const handler = (_event: any, progress: any) => callback(progress);
+    ipcRenderer.on('download-progress', handler);
+    return () => ipcRenderer.removeListener('download-progress', handler);
+  },
+  
   // 设备码授权轮询
   pollDeviceCode: (deviceCode: string) => ipcRenderer.invoke('poll-device-code', deviceCode),
   

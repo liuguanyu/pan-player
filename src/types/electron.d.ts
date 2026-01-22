@@ -7,6 +7,12 @@ export interface ElectronAPI {
   // 下载文件
   downloadFile: (url: string) => Promise<{ success: boolean; data?: number[]; error?: string }>;
   
+  // 下载文件到本地
+  downloadFileToLocal: (url: string, fileName: string) => Promise<{ success: boolean; filePath?: string; error?: string; canceled?: boolean }>;
+  
+  // 监听下载进度
+  onDownloadProgress: (callback: (progress: { fileName: string; progress: number; loaded: number; total?: number }) => void) => () => void;
+  
   // 设备码授权轮询
   pollDeviceCode: (deviceCode: string) => Promise<any>;
   
