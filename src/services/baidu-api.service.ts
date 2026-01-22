@@ -1,6 +1,7 @@
 import { httpClient } from '@/lib/http-client';
 import { baiduAuth } from '@/services/auth.service';
 import { FileInfo } from '@/types/file';
+import CryptoJS from 'crypto-js';
 
 class BaiduPanAPI {
   private static instance: BaiduPanAPI;
@@ -314,6 +315,293 @@ class BaiduPanAPI {
     } catch (error) {
       console.error('获取文件内容失败:', error);
       return null;
+    }
+  }
+
+  /**
+   * 计算文件的MD5
+   */
+  private calculateMD5(content: string): string {
+    return CryptoJS.MD5(content).toString();
+  }
+
+  /**
+   * 上传文件 - 预创建
+   */
+  private async precreateFile(
+    path: string,
+    size: number,
+    blockList: string[]
+  ): Promise<{ uploadid: string; return_type?: number } | null> {
+    const accessToken = await this.ensureAccessToken();
+    if (!accessToken) {
+      console.error('无法获取访问令牌');
+      return null;
+    }
+
+    const url = `${this.PAN_API_URL}/file`;
+    const params = {
+      method: 'precreate',
+      access_token: accessToken
+    };
+
+    const data = new URLSearchParams();
+    data.append('path', path);
+    data.append('size', size.toString());
+    data.append('isdir', '0');
+    data.append('autoinit', '1');
+    data.append('block_list', JSON.stringify(blockList));
+    data.append('rtype', '3'); // rtype=3 表示覆盖
+
+    try {
+      const response = await httpClient.post<any>(url, data.toString(), {
+        params,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'User-Agent': 'pan.baidu.com'
+        }
+      });
+
+      if ('error' in response) {
+        console.error('预创建文件失败:', response.message);
+        return null;
+      }
+
+      const result = response.data;
+      console.log('预创建API响应:', JSON.stringify(result, null, 2));
+      
+      if (result.errno !== undefined && result.errno !== 0) {
+        console.error('预创建文件API错误:', result.errmsg, '错误码:', result.errno);
+        return null;
+      }
+
+      return {
+        uploadid: result.uploadid,
+        return_type: result.return_type
+      };
+    } catch (error) {
+      console.error('预创建文件失败:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 上传文件分片 - 使用原生fetch API以支持FormData
+   */
+  private async uploadFileSlice(
+    path: string,
+    uploadid: string,
+    partseq: number,
+    file: Blob
+  ): Promise<boolean> {
+    const accessToken = await this.ensureAccessToken();
+    if (!accessToken) {
+      console.error('无法获取访问令牌');
+      return false;
+    }
+
+    // 构建URL with参数
+    const urlObj = new URL('https://d.pcs.baidu.com/rest/2.0/pcs/superfile2');
+    urlObj.searchParams.set('method', 'upload');
+    urlObj.searchParams.set('access_token', accessToken);
+    urlObj.searchParams.set('type', 'tmpfile');
+    urlObj.searchParams.set('path', path);
+    urlObj.searchParams.set('uploadid', uploadid);
+    urlObj.searchParams.set('partseq', partseq.toString());
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      console.log('上传文件分片到:', urlObj.toString());
+      
+      // 使用原生fetch API以正确处理FormData
+      const response = await fetch(urlObj.toString(), {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'User-Agent': 'pan.baidu.com'
+        }
+      });
+
+      const result = await response.json();
+      console.log('上传分片API响应:', JSON.stringify(result, null, 2));
+      
+      if (!response.ok) {
+        console.error('上传文件分片HTTP错误:', response.status, response.statusText);
+        return false;
+      }
+
+      if (result.errno !== undefined && result.errno !== 0) {
+        console.error('上传文件分片API错误:', result.errmsg, '错误码:', result.errno);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('上传文件分片失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 创建文件
+   */
+  private async createFile(
+    path: string,
+    size: number,
+    uploadid: string,
+    blockList: string[]
+  ): Promise<boolean> {
+    const accessToken = await this.ensureAccessToken();
+    if (!accessToken) {
+      console.error('无法获取访问令牌');
+      return false;
+    }
+
+    const url = `${this.PAN_API_URL}/file`;
+    const params = {
+      method: 'create',
+      access_token: accessToken
+    };
+
+    const data = new URLSearchParams();
+    data.append('path', path);
+    data.append('size', size.toString());
+    data.append('isdir', '0');
+    data.append('uploadid', uploadid);
+    data.append('block_list', JSON.stringify(blockList));
+    data.append('rtype', '3'); // rtype=3 表示覆盖
+
+    try {
+      const response = await httpClient.post<any>(url, data.toString(), {
+        params,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'User-Agent': 'pan.baidu.com'
+        }
+      });
+
+      if ('error' in response) {
+        console.error('创建文件失败:', response.message);
+        return false;
+      }
+
+      const result = response.data;
+      console.log('创建文件API响应:', JSON.stringify(result, null, 2));
+      
+      if (result.errno !== undefined && result.errno !== 0) {
+        console.error('创建文件API错误:', result.errmsg, '错误码:', result.errno);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('创建文件失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 上传LRC文件
+   */
+  public async uploadLrcFile(
+    targetPath: string,
+    content: string,
+    onProgress?: (progress: number) => void
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // 确保路径以.lrc结尾
+      if (!targetPath.toLowerCase().endsWith('.lrc')) {
+        return { success: false, error: '目标路径必须以.lrc结尾' };
+      }
+
+      // 将内容转换为Blob
+      const blob = new Blob([content], { type: 'text/plain; charset=utf-8' });
+      const size = blob.size;
+
+      // 计算MD5
+      const md5 = this.calculateMD5(content);
+      const blockList = [md5];
+
+      if (onProgress) onProgress(10);
+
+      // 步骤1: 预创建
+      console.log('=== 开始上传LRC文件 ===');
+      console.log('目标路径:', targetPath);
+      console.log('文件大小:', size, 'bytes');
+      console.log('MD5:', md5);
+      console.log('开始预创建文件...');
+      
+      const precreateResult = await this.precreateFile(targetPath, size, blockList);
+      if (!precreateResult) {
+        console.error('预创建文件失败');
+        return { success: false, error: '预创建文件失败' };
+      }
+
+      console.log('预创建成功, uploadid:', precreateResult.uploadid);
+      console.log('return_type:', precreateResult.return_type);
+
+      if (onProgress) onProgress(30);
+
+      // 如果return_type为2，表示秒传成功，无需上传
+      if (precreateResult.return_type === 2) {
+        console.log('文件秒传成功(MD5匹配,跳过上传步骤)');
+        if (onProgress) onProgress(100);
+        return { success: true };
+      }
+
+      // 步骤2: 上传文件分片
+      console.log('开始上传文件分片...');
+      const uploadSuccess = await this.uploadFileSlice(
+        targetPath,
+        precreateResult.uploadid,
+        0,
+        blob
+      );
+
+      if (!uploadSuccess) {
+        console.error('上传文件分片失败');
+        return { success: false, error: '上传文件分片失败' };
+      }
+
+      console.log('文件分片上传成功');
+      if (onProgress) onProgress(70);
+
+      // 步骤3: 创建文件
+      console.log('开始创建文件(完成上传)...');
+      const createSuccess = await this.createFile(
+        targetPath,
+        size,
+        precreateResult.uploadid,
+        blockList
+      );
+
+      if (!createSuccess) {
+        console.error('创建文件失败');
+        return { success: false, error: '创建文件失败' };
+      }
+
+      if (onProgress) onProgress(100);
+      console.log('=== 文件上传成功 ===');
+      console.log('最终路径:', targetPath);
+      return { success: true };
+    } catch (error: any) {
+      console.error('上传LRC文件失败:', error);
+      return { success: false, error: error.message || '上传失败' };
+    }
+  }
+
+  /**
+   * 检查LRC文件是否存在
+   */
+  public async checkLrcFileExists(lrcPath: string): Promise<boolean> {
+    try {
+      const file = await this.searchFile(lrcPath);
+      return file !== null && file.server_filename.toLowerCase().endsWith('.lrc');
+    } catch (error) {
+      console.error('检查LRC文件失败:', error);
+      return false;
     }
   }
 }

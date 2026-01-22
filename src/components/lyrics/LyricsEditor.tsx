@@ -9,9 +9,20 @@ import {
   Trash2,
   FileText,
   Music,
-  Type
+  Type,
+  Cloud,
+  CloudUpload
 } from 'lucide-react';
 import { parsePlainText, generateLRC, formatLRCTime, parseLRC } from '@/lib/lrc-parser';
+import { baiduAPI } from '@/services/baidu-api.service';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 export const LyricsEditor: React.FC = () => {
   const {
@@ -20,13 +31,18 @@ export const LyricsEditor: React.FC = () => {
     currentTime,
     updateLyricLine,
     addLyricLine,
-    deleteLyricLine
+    deleteLyricLine,
+    currentSong
   } = usePlayerStore();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
   const [textInput, setTextInput] = useState('');
   const [showTextInput, setShowTextInput] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [showOverwriteDialog, setShowOverwriteDialog] = useState(false);
+  const [pendingUploadPath, setPendingUploadPath] = useState<string>('');
   const editInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -110,6 +126,89 @@ export const LyricsEditor: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  // 上传LRC到百度云盘
+  const handleUploadToCloud = async () => {
+    if (!currentSong) {
+      alert('请先选择一首歌曲');
+      return;
+    }
+
+    if (!parsedLyrics || parsedLyrics.length === 0) {
+      alert('没有可上传的歌词');
+      return;
+    }
+
+    // 生成LRC文件路径（与音频文件同目录，同名但扩展名为.lrc）
+    const audioPath = currentSong.path;
+    const lrcPath = audioPath.replace(/\.[^.]+$/, '.lrc');
+
+    if (lrcPath === audioPath) {
+      alert('无法生成LRC文件路径');
+      return;
+    }
+
+    try {
+      // 检查LRC文件是否已存在
+      const exists = await baiduAPI.checkLrcFileExists(lrcPath);
+      
+      if (exists) {
+        // 如果存在，显示覆盖确认对话框
+        setPendingUploadPath(lrcPath);
+        setShowOverwriteDialog(true);
+      } else {
+        // 如果不存在，直接上传
+        await performUpload(lrcPath);
+      }
+    } catch (error) {
+      console.error('检查LRC文件失败:', error);
+      alert('检查LRC文件失败，请重试');
+    }
+  };
+
+  // 执行实际的上传操作
+  const performUpload = async (lrcPath: string) => {
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const lrcContent = generateLRC(parsedLyrics!);
+      
+      const result = await baiduAPI.uploadLrcFile(
+        lrcPath,
+        lrcContent,
+        (progress) => {
+          setUploadProgress(progress);
+        }
+      );
+
+      if (result.success) {
+        alert('LRC歌词上传成功！');
+      } else {
+        console.error('上传LRC失败:', result.error);
+        alert(`上传LRC失败: ${result.error || '未知错误'}`);
+      }
+    } catch (error) {
+      console.error('上传LRC失败:', error);
+      alert(`上传LRC失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
+  };
+
+  // 确认覆盖并上传
+  const handleConfirmOverwrite = async () => {
+    setShowOverwriteDialog(false);
+    await performUpload(pendingUploadPath);
+    setPendingUploadPath('');
+  };
+
+  // 取消覆盖
+  const handleCancelOverwrite = () => {
+    setShowOverwriteDialog(false);
+    setPendingUploadPath('');
   };
 
   // 从文本框导入歌词
@@ -230,6 +329,26 @@ export const LyricsEditor: React.FC = () => {
           >
             <Download className="h-4 w-4" />
             导出LRC
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleUploadToCloud}
+            className="gap-1"
+            disabled={filteredLyrics.length === 0 || isUploading || !currentSong}
+          >
+            {isUploading ? (
+              <>
+                <CloudUpload className="h-4 w-4 animate-pulse" />
+                上传中 {uploadProgress}%
+              </>
+            ) : (
+              <>
+                <Cloud className="h-4 w-4" />
+                上传到云端
+              </>
+            )}
           </Button>
           
           <div className="w-px bg-border mx-1" />
@@ -363,6 +482,40 @@ export const LyricsEditor: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* 覆盖确认对话框 */}
+      <Dialog open={showOverwriteDialog} onOpenChange={setShowOverwriteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认覆盖</DialogTitle>
+            <DialogDescription>
+              云端已存在同名的LRC歌词文件，是否要覆盖？
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              文件路径: {pendingUploadPath}
+            </p>
+            <p className="text-sm text-amber-600 mt-2">
+              ⚠️ 覆盖后原有歌词文件将被永久替换，无法恢复。
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCancelOverwrite}
+            >
+              取消
+            </Button>
+            <Button
+              variant="default"
+              onClick={handleConfirmOverwrite}
+            >
+              确认覆盖
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
