@@ -1,10 +1,161 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { usePlayerStore } from '@/store/playerStore';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, GripVertical } from 'lucide-react';
 import { AddPlaylistDialog } from './AddPlaylistDialog';
 import { playlistService } from '@/services/playlist.service';
 import { useAuth } from '@/hooks/useAuth';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+interface SortablePlaylistItemProps {
+  playlist: { name: string; items: any[] };
+  isActive: boolean;
+  onSelect: () => void;
+  onDelete: (e: React.MouseEvent) => void;
+  onRename: (newName: string) => void;
+}
+
+const SortablePlaylistItem: React.FC<SortablePlaylistItemProps> = ({
+  playlist,
+  isActive,
+  onSelect,
+  onDelete,
+  onRename
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: playlist.name });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(playlist.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isEditing]);
+
+  const handleRenameSubmit = () => {
+    if (editName.trim() && editName !== playlist.name) {
+      onRename(editName.trim());
+    } else {
+      setEditName(playlist.name); // 恢复原名
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleRenameSubmit();
+    } else if (e.key === 'Escape') {
+      setEditName(playlist.name);
+      setIsEditing(false);
+    }
+    e.stopPropagation(); // 防止触发快捷键
+  };
+
+  if (isEditing) {
+    return (
+      <div 
+        ref={setNodeRef}
+        style={style}
+        className="px-2 py-1.5 flex items-center"
+      >
+        <Input
+          ref={inputRef}
+          value={editName}
+          onChange={(e) => setEditName(e.target.value)}
+          onBlur={handleRenameSubmit}
+          onKeyDown={handleKeyDown}
+          className="h-7 text-sm"
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group px-2 py-1.5 text-sm font-medium rounded-md cursor-pointer transition-colors flex items-center justify-between ${
+        isActive
+          ? 'bg-accent text-accent-foreground'
+          : 'hover:bg-accent/50'
+      }`}
+      onClick={onSelect}
+    >
+      <div className="flex items-center flex-1 overflow-hidden">
+        <div 
+          {...attributes} 
+          {...listeners}
+          className="mr-2 cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="h-4 w-4" />
+        </div>
+        <div className="flex-1 truncate">
+          {playlist.name}
+          <span className="ml-2 text-xs text-muted-foreground">
+            ({playlist.items.length})
+          </span>
+        </div>
+      </div>
+      
+      <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 mr-1"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsEditing(true);
+          }}
+        >
+          <Edit2 className="h-3 w-3 text-muted-foreground hover:text-primary" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={onDelete}
+        >
+          <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+        </Button>
+      </div>
+    </div>
+  );
+};
 
 export const PlaylistSidebar: React.FC = () => {
   // 优化状态选择，只订阅需要的状态
@@ -14,8 +165,22 @@ export const PlaylistSidebar: React.FC = () => {
   const recentSongs = usePlayerStore(state => state.recentSongs);
   const setShowLyrics = usePlayerStore(state => state.setShowLyrics);
   const setShowVisualizer = usePlayerStore(state => state.setShowVisualizer);
+  const reorderPlaylists = usePlayerStore(state => state.reorderPlaylists);
+  const renamePlaylist = usePlayerStore(state => state.renamePlaylist);
+  
   const { isAuthenticated } = useAuth();
   const [showAddDialog, setShowAddDialog] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // 拖动8像素才触发排序，防止点击时误触发
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   // 如果没有用户创建的播放列表，且已登录，自动弹出新建对话框
   useEffect(() => {
@@ -40,6 +205,22 @@ export const PlaylistSidebar: React.FC = () => {
       }
     }
   };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const userPlaylists = playlists.filter(p => p.name !== '最近播放');
+      const oldIndex = userPlaylists.findIndex((p) => p.name === active.id);
+      const newIndex = userPlaylists.findIndex((p) => p.name === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        reorderPlaylists(oldIndex, newIndex);
+      }
+    }
+  };
+
+  const userPlaylists = playlists.filter(playlist => playlist.name !== '最近播放');
 
   return (
     <div className="w-64 border-r bg-muted/30 flex flex-col">
@@ -75,40 +256,32 @@ export const PlaylistSidebar: React.FC = () => {
           </span>
         </div>
         
-        {/* 播放列表 */}
-        {playlists
-          .filter(playlist => playlist.name !== '最近播放') // 过滤掉"最近播放"列表，因为它已经在顶部硬编码显示
-          .map((playlist) => (
-            <div
-              key={playlist.name}
-              className={`group px-2 py-1.5 text-sm font-medium rounded-md cursor-pointer transition-colors flex items-center justify-between ${
-                currentPlaylist === playlist.name
-                  ? 'bg-accent text-accent-foreground'
-                  : 'hover:bg-accent/50'
-              }`}
-              onClick={() => {
-                setCurrentPlaylist(playlist.name);
-                setShowLyrics(false); // 切换列表时隐藏歌词
-                setShowVisualizer(false); // 切换列表时关闭可视化
-              }}
-            >
-              <div className="flex-1 truncate">
-                {playlist.name}
-                <span className="ml-2 text-xs text-muted-foreground">
-                  ({playlist.items.length})
-                </span>
-              </div>
-              
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => handleDeletePlaylist(e, playlist.name)}
-              >
-                <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-              </Button>
-            </div>
-          ))}
+        {/* 可拖拽的播放列表 */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={userPlaylists.map(p => p.name)}
+            strategy={verticalListSortingStrategy}
+          >
+            {userPlaylists.map((playlist) => (
+              <SortablePlaylistItem
+                key={playlist.name}
+                playlist={playlist}
+                isActive={currentPlaylist === playlist.name}
+                onSelect={() => {
+                  setCurrentPlaylist(playlist.name);
+                  setShowLyrics(false);
+                  setShowVisualizer(false);
+                }}
+                onDelete={(e) => handleDeletePlaylist(e, playlist.name)}
+                onRename={(newName) => renamePlaylist(playlist.name, newName)}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
       </div>
       
       {/* 添加播放列表对话框 */}

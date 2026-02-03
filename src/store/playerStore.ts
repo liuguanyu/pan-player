@@ -54,6 +54,8 @@ interface PlayerState {
   updatePlaylist: (playlist: Playlist) => void;
   setCurrentPlaylist: (name: string) => void;
   updatePlaylistItemDuration: (fs_id: number, duration: number) => void;
+  reorderPlaylists: (fromIndex: number, toIndex: number) => void; // 拖拽排序
+  renamePlaylist: (oldName: string, newName: string) => void; // 重命名列表
   
   // 最近播放方法
   addRecentSong: (song: PlaylistItem) => void;
@@ -258,6 +260,48 @@ export const usePlayerStore = create<PlayerState>()(
           )
         }))
       })),
+      
+      // 播放列表拖拽排序
+      reorderPlaylists: (fromIndex, toIndex) => set((state) => {
+        // 过滤掉"最近播放"，只对用户创建的播放列表进行排序
+        const userPlaylists = state.playlists.filter(p => p.name !== '最近播放');
+        const recentPlaylist = state.playlists.find(p => p.name === '最近播放');
+        
+        // 调整索引，因为"最近播放"始终在顶部
+        const adjustedFromIndex = fromIndex;
+        const adjustedToIndex = toIndex;
+        
+        // 创建新的播放列表数组
+        const newPlaylists = [...userPlaylists];
+        const [movedPlaylist] = newPlaylists.splice(adjustedFromIndex, 1);
+        newPlaylists.splice(adjustedToIndex, 0, movedPlaylist);
+        
+        // 如果有"最近播放"，把它放在最前面
+        if (recentPlaylist) {
+          return { playlists: [recentPlaylist, ...newPlaylists] };
+        }
+        
+        return { playlists: newPlaylists };
+      }),
+      
+      // 重命名播放列表
+      renamePlaylist: (oldName, newName) => set((state) => {
+        // 检查新名称是否已存在
+        if (state.playlists.some(p => p.name === newName)) {
+          console.warn(`播放列表 ${newName} 已存在`);
+          return state;
+        }
+        
+        return {
+          playlists: state.playlists.map(playlist =>
+            playlist.name === oldName
+              ? { ...playlist, name: newName }
+              : playlist
+          ),
+          // 如果当前播放列表是被重命名的列表，更新当前播放列表名称
+          currentPlaylist: state.currentPlaylist === oldName ? newName : state.currentPlaylist
+        };
+      }),
       
       // 最近播放方法
       addRecentSong: (song) => set((state) => {

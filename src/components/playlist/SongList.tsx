@@ -3,7 +3,7 @@ import { usePlayerStore } from '@/store/playerStore';
 import { PlaylistItem } from '@/types/file';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Trash2, Search, X, Download } from 'lucide-react';
+import { Trash2, Search, X, Download, RefreshCw } from 'lucide-react';
 import { playlistService } from '@/services/playlist.service';
 import { baiduAPI } from '@/services/baidu-api.service';
 
@@ -117,6 +117,11 @@ export const SongList = () => {
   const addRecentSong = usePlayerStore(state => state.addRecentSong);
   const removeRecentSong = usePlayerStore(state => state.removeRecentSong);
   const setIsPlaying = usePlayerStore(state => state.setIsPlaying);
+  const updatePlaylist = usePlayerStore(state => state.updatePlaylist);
+  
+  // 同步相关状态
+  const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState('');
 
   // 搜索相关状态
   const [searchQuery, setSearchQuery] = useState('');
@@ -357,6 +362,184 @@ export const SongList = () => {
         return newMap;
       });
     }
+   };
+  
+  // 深度同步播放列表
+  const handleSyncPlaylist = async () => {
+    if (!currentPlaylist || currentPlaylist === 'recent') {
+      alert('无法同步"最近播放"列表');
+      return;
+    }
+    
+    const playlist = playlists.find(p => p.name === currentPlaylist);
+    if (!playlist) {
+      alert('播放列表不存在');
+      return;
+    }
+    
+    if (!confirm(`确定要深度同步播放列表 "${currentPlaylist}" 吗？\n\n这将根据列表中的文件路径重新扫描百度网盘，重建播放列表。`)) {
+      return;
+    }
+    
+    setSyncing(true);
+    setSyncProgress('开始同步...');
+    
+    try {
+      // 1. 收集所有文件路径
+      const filePaths = playlist.items.map(item => item.path);
+      
+      if (filePaths.length === 0) {
+        alert('播放列表为空，无法进行同步');
+        setSyncing(false);
+        setSyncProgress('');
+        return;
+      }
+      
+      // 2. 计算最大公共父目录
+      // 将所有路径分割成部分
+      const pathParts = filePaths.map(path => path.split('/').filter(Boolean));
+      
+      // 找到最短的路径长度
+      const minLength = Math.min(...pathParts.map(parts => parts.length));
+      
+      let commonPathParts: string[] = [];
+      
+      // 逐层比较
+      for (let i = 0; i < minLength; i++) {
+        const currentPart = pathParts[0][i];
+        const allMatch = pathParts.every(parts => parts[i] === currentPart);
+        
+        if (allMatch) {
+          commonPathParts.push(currentPart);
+        } else {
+          break;
+        }
+      }
+      
+      // 3. 确定要扫描的根目录
+      // 如果有公共路径，就用公共路径；否则使用根目录
+      // 注意：commonPathParts 包含的是文件名之前的路径部分，最后一部分可能是共同的父文件夹
+      // 由于我们是在文件路径上比较，最后一部分可能是文件名（如果所有文件同名，但这不可能）或者文件夹
+      // 所以我们需要判断commonPathParts是否指向一个具体的文件
+      
+      // 更简单的方法：提取所有文件的目录，然后找目录的公共前缀
+      const dirPaths = playlist.items.map(item => {
+        const parts = item.path.split('/');
+        parts.pop(); // 移除文件名
+        return parts.join('/') || '/';
+      });
+      
+      const dirPathParts = dirPaths.map(path => path.split('/').filter(Boolean));
+      const minDirLength = Math.min(...dirPathParts.map(parts => parts.length));
+      
+      let commonDirParts: string[] = [];
+      for (let i = 0; i < minDirLength; i++) {
+        const currentPart = dirPathParts[0][i];
+        const allMatch = dirPathParts.every(parts => parts[i] === currentPart);
+        if (allMatch) {
+          commonDirParts.push(currentPart);
+        } else {
+          break;
+        }
+      }
+      
+      const rootScanPath = '/' + commonDirParts.join('/');
+      console.log('计算出的最大公共父目录:', rootScanPath);
+      
+      setSyncProgress(`正在扫描目录: ${rootScanPath}`);
+      
+      // 递归扫描最大公共父目录
+      let allAudioFiles: any[] = [];
+      try {
+        const audioFiles = await baiduAPI.getAudioFilesRecursive(rootScanPath);
+        if (audioFiles && audioFiles.length > 0) {
+          console.log(`目录 ${rootScanPath} 找到 ${audioFiles.length} 个音频文件`);
+          allAudioFiles = audioFiles;
+        } else {
+          console.log(`目录 ${rootScanPath} 没有找到音频文件`);
+        }
+      } catch (error) {
+        console.error(`扫描目录 ${rootScanPath} 失败:`, error);
+        alert(`扫描目录 ${rootScanPath} 失败: ${error}`);
+        setSyncing(false);
+        setSyncProgress('');
+        return;
+      }
+      
+      console.log(`总共找到 ${allAudioFiles.length} 个音频文件`);
+      
+      // 保护措施：如果没有找到任何文件，不更新列表
+      if (allAudioFiles.length === 0) {
+        alert('扫描完成，但没有找到任何音频文件。播放列表保持不变。');
+        setSyncProgress('');
+        setSyncing(false);
+        return;
+      }
+
+      // 去重：以fs_id为准
+      const uniqueFilesMap = new Map();
+      allAudioFiles.forEach(file => {
+          uniqueFilesMap.set(file.fs_id, file);
+      });
+      const uniqueFiles = Array.from(uniqueFilesMap.values());
+      
+      // 按路径排序：先文件夹，后文件
+      const sortedFiles = [...uniqueFiles].sort((a, b) => {
+        const partsA = a.path.split('/').filter(Boolean);
+        const partsB = b.path.split('/').filter(Boolean);
+        
+        const len = Math.min(partsA.length, partsB.length);
+        for (let i = 0; i < len; i++) {
+          if (partsA[i] === partsB[i]) continue;
+          
+          const isFileA = (i === partsA.length - 1);
+          const isFileB = (i === partsB.length - 1);
+          
+          if (isFileA && !isFileB) return 1;
+          if (!isFileA && isFileB) return -1;
+          
+          return partsA[i].localeCompare(partsB[i]);
+        }
+        
+        return partsA.length - partsB.length;
+      });
+      
+      // 转换为 PlaylistItem 格式
+      const newItems = sortedFiles.map(file => ({
+        fs_id: file.fs_id,
+        server_filename: file.server_filename,
+        path: file.path,
+        size: file.size,
+        category: file.category,
+        isdir: file.isdir,
+        local_mtime: file.local_mtime,
+        server_mtime: file.server_mtime,
+        md5: file.md5,
+        add_time: Math.floor(Date.now() / 1000)
+      }));
+      
+      // 更新播放列表（重建而非增量更新）
+      const updatedPlaylist = {
+        ...playlist,
+        items: newItems,
+        update_time: Math.floor(Date.now() / 1000)
+      };
+      
+      updatePlaylist(updatedPlaylist);
+      
+      setSyncProgress(`同步完成！找到 ${newItems.length} 个文件`);
+      
+      setTimeout(() => {
+        setSyncProgress('');
+      }, 3000);
+      
+    } catch (error) {
+      console.error('同步播放列表失败:', error);
+      alert('同步失败，请查看控制台了解详情');
+      setSyncProgress('');
+    } finally {
+      setSyncing(false);
+    }
   };
 
   if (songs.length === 0) {
@@ -368,35 +551,66 @@ export const SongList = () => {
     );
   }
 
-  return (
-    <div className="flex flex-col h-full">
-      {/* 搜索框 */}
-      {showSearch && (
-        <div className="flex items-center gap-2 p-2 border-b bg-background/95 backdrop-blur">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <Input
-            ref={searchInputRef}
-            type="text"
-            placeholder="搜索歌曲..."
-            value={searchQuery}
-            onChange={handleSearchChange}
-            className="flex-1 h-8"
-          />
-          {searchResults.length > 0 && (
-            <span className="text-xs text-muted-foreground whitespace-nowrap">
-              {currentSearchIndex + 1} / {searchResults.length}
-            </span>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={closeSearch}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
+   return (
+     <div className="flex flex-col h-full">
+       {/* 工具栏 */}
+       <div className="flex items-center justify-between p-2 border-b bg-background/95 backdrop-blur">
+         <div className="flex items-center gap-2">
+           {currentPlaylist && currentPlaylist !== 'recent' && (
+             <Button
+               variant="outline"
+               size="sm"
+               onClick={handleSyncPlaylist}
+               disabled={syncing}
+               className="gap-2"
+             >
+               <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+               {syncing ? '同步中...' : '深度同步'}
+             </Button>
+           )}
+           {syncProgress && (
+             <span className="text-sm text-muted-foreground">{syncProgress}</span>
+           )}
+         </div>
+         
+         <Button
+           variant="ghost"
+           size="icon"
+           className="h-8 w-8"
+           onClick={() => setShowSearch(true)}
+           title="搜索歌曲 (Ctrl+F)"
+         >
+           <Search className="h-4 w-4" />
+         </Button>
+       </div>
+       
+       {/* 搜索框 */}
+        {showSearch && (
+          <div className="flex items-center gap-2 p-2 border-b bg-background/95 backdrop-blur">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <Input
+              ref={searchInputRef}
+              type="text"
+              placeholder="搜索歌曲..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              className="flex-1 h-8"
+            />
+            {searchResults.length > 0 && (
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                {currentSearchIndex + 1} / {searchResults.length}
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={closeSearch}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       
       <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
       <table className="w-full border-collapse table-fixed">
