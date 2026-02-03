@@ -46,3 +46,7 @@ src/config/credentials.ts
 
 # OS
 Thumbs.db
+
+# Reference materials and SDKs - DO NOT COMMIT
+pythonsdk_20220616/
+ref/
