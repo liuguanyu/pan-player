@@ -246,7 +246,23 @@ export const BackgroundAudio = () => {
         setIsPlaying(false);
         return;
       }
-      playNext();
+      
+      // 获取当前播放模式
+      const { playbackMode } = usePlayerStore.getState();
+      
+      // 单曲循环模式：直接重播当前歌曲
+      if (playbackMode === 'single') {
+        console.log('单曲循环模式：重播当前歌曲');
+        if (audioRef.current) {
+          audioRef.current.currentTime = 0;
+          audioRef.current.play().catch(e => {
+            if (e.name !== 'AbortError') console.error("重播失败:", e);
+          });
+        }
+      } else {
+        // 其他模式：播放下一首
+        playNext();
+      }
     }
   };
 
