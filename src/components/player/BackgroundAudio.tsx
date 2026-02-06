@@ -447,6 +447,8 @@ export const BackgroundAudio = () => {
       }}
       onTimeUpdate={handleTimeUpdate}
       onCanPlay={handleCanPlay}
+      onEnded={handleEnded}
+      onPause={handlePause}
       onError={handleError}
       onEnded={handleEnded}
       onPause={handlePause}
