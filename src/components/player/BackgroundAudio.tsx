@@ -450,8 +450,6 @@ export const BackgroundAudio = () => {
       onEnded={handleEnded}
       onPause={handlePause}
       onError={handleError}
-      onEnded={handleEnded}
-      onPause={handlePause}
       style={{ display: 'none' }}
     />
   );
