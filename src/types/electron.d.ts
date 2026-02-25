@@ -16,6 +16,9 @@ export interface ElectronAPI {
   // 设备码授权轮询
   pollDeviceCode: (deviceCode: string) => Promise<any>;
   
+  // 停止设备码授权轮询
+  stopPollDeviceCode: () => Promise<{ success: boolean }>;
+  
   // 监听授权成功事件
   onAuthSuccess: (callback: (data: any) => void) => void;
   

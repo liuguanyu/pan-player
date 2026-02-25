@@ -13,6 +13,9 @@ let currentSongName: string = '';
 let marqueeTimer: NodeJS.Timeout | null = null;
 let marqueeOffset: number = 0;
 let isMuted: boolean = false;
+// 设备码轮询控制标志
+let isPollingDeviceCode = false;
+let stopPollingFlag = false;
 
 // 初始化配置路径
 function initConfigPath() {
@@ -423,6 +426,18 @@ function registerIpcHandlers() {
 
   // 处理设备码授权轮询
   ipcMain.handle('poll-device-code', async (event: IpcMainInvokeEvent, deviceCode: string) => {
+    // 如果已经在轮询，先停止之前的轮询
+    if (isPollingDeviceCode) {
+      logger.log('检测到重复轮询请求，先停止之前的轮询');
+      stopPollingFlag = true;
+      // 等待之前的轮询退出
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    // 设置轮询标志
+    isPollingDeviceCode = true;
+    stopPollingFlag = false;
+
     const params = {
       grant_type: 'device_token',
       code: deviceCode,
@@ -432,68 +447,114 @@ function registerIpcHandlers() {
 
     logger.log('开始轮询设备码，参数:', params);
 
-    // 最多轮询60次，每次间隔5秒
-    for (let i = 0; i < 60; i++) {
-      try {
-        logger.log(`第 ${i + 1} 次轮询...`);
-        const response = await axios.get('https://openapi.baidu.com/oauth/2.0/token', {
-          params,
-          headers: {
-            'User-Agent': 'pan.baidu.com'
+    try {
+      // 最多轮询60次，每次间隔5秒
+      for (let i = 0; i < 60; i++) {
+        // 检查是否需要停止轮询
+        if (stopPollingFlag) {
+          logger.log('轮询被手动停止');
+          isPollingDeviceCode = false;
+          return { success: false, error: 'cancelled' };
+        }
+
+        try {
+          logger.log(`第 ${i + 1} 次轮询...`);
+          const response = await axios.get('https://openapi.baidu.com/oauth/2.0/token', {
+            params,
+            headers: {
+              'User-Agent': 'pan.baidu.com'
+            }
+          });
+
+          logger.log('响应状态:', response.status);
+          logger.log('响应数据:', response.data);
+
+          const data = response.data;
+
+          // 授权成功
+          if (data.access_token) {
+            logger.log('授权成功！停止轮询');
+            // 通知渲染进程授权成功
+            event.sender.send('auth-success', data);
+            // 清除轮询标志
+            isPollingDeviceCode = false;
+            stopPollingFlag = true; // 确保不会有其他轮询继续
+            return { success: true, data };
           }
-        });
 
-        logger.log('响应状态:', response.status);
-        logger.log('响应数据:', response.data);
+          // 授权过期
+          if (data.error === 'expired_token') {
+            logger.error('授权已过期');
+            isPollingDeviceCode = false;
+            return { success: false, error: 'expired_token' };
+          }
 
-        const data = response.data;
+          // 其他错误
+          if (data.error && data.error !== 'authorization_pending') {
+            logger.error('设备码授权失败:', data);
+            isPollingDeviceCode = false;
+            return { success: false, error: data.error };
+          }
 
-        // 授权成功
-        if (data.access_token) {
-          logger.log('授权成功！');
-          // 通知渲染进程授权成功
-          event.sender.send('auth-success', data);
-          return { success: true, data };
+          // 等待用户授权
+          if (data.error === 'authorization_pending') {
+            logger.log('等待用户授权...');
+          }
+
+          // 等待5秒后继续轮询，但每100ms检查一次停止标志
+          for (let j = 0; j < 50; j++) {
+            if (stopPollingFlag) {
+              logger.log('在等待期间收到停止信号');
+              break;
+            }
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        } catch (error: any) {
+          // 特殊处理 authorization_pending 错误
+          if (error.response && error.response.data && error.response.data.error === 'authorization_pending') {
+            logger.log('等待用户授权...');
+            // 等待5秒后继续轮询，但每100ms检查一次停止标志
+            for (let j = 0; j < 50; j++) {
+              if (stopPollingFlag) {
+                logger.log('在等待期间收到停止信号');
+                break;
+              }
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            continue;
+          }
+
+          logger.error('设备码授权失败:', error.message);
+          if (error.response) {
+            logger.error('错误响应:', error.response.status, error.response.data);
+          }
+          // 继续轮询而不是退出，但每100ms检查一次停止标志
+          for (let j = 0; j < 50; j++) {
+            if (stopPollingFlag) {
+              logger.log('在等待期间收到停止信号');
+              break;
+            }
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
         }
-
-        // 授权过期
-        if (data.error === 'expired_token') {
-          logger.error('授权已过期');
-          return { success: false, error: 'expired_token' };
-        }
-
-        // 其他错误
-        if (data.error && data.error !== 'authorization_pending') {
-          logger.error('设备码授权失败:', data);
-          return { success: false, error: data.error };
-        }
-
-        // 等待用户授权
-        if (data.error === 'authorization_pending') {
-          logger.log('等待用户授权...');
-        }
-
-        // 等待5秒后继续轮询
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-      } catch (error: any) {
-        // 特殊处理 authorization_pending 错误
-        if (error.response && error.response.data && error.response.data.error === 'authorization_pending') {
-          logger.log('等待用户授权...');
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          continue;
-        }
-
-        logger.error('设备码授权失败:', error.message);
-        if (error.response) {
-          logger.error('错误响应:', error.response.status, error.response.data);
-        }
-        // 继续轮询而不是退出
-        await new Promise((resolve) => setTimeout(resolve, 5000));
       }
-    }
 
-    logger.error('设备码授权超时');
-    return { success: false, error: 'timeout' };
+      logger.error('设备码授权超时');
+      isPollingDeviceCode = false;
+      return { success: false, error: 'timeout' };
+    } finally {
+      // 确保无论如何都清除轮询标志
+      isPollingDeviceCode = false;
+    }
+  });
+
+  // 处理停止设备码轮询请求
+  ipcMain.handle('stop-poll-device-code', async () => {
+    if (isPollingDeviceCode) {
+      logger.log('收到停止轮询请求');
+      stopPollingFlag = true;
+    }
+    return { success: true };
   });
 
   // 处理下载文件到本地

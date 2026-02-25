@@ -336,21 +336,50 @@ export const usePlayerStore = create<PlayerState>()(
       setIsEditingLyrics: (isEditingLyrics) => set({ isEditingLyrics }),
       
       // 更新单个歌词行
-      updateLyricLine: (id, updates) => set((state) => ({
-        parsedLyrics: state.parsedLyrics?.map(line =>
-          line.id === id ? { ...line, ...updates } : line
-        ) || null
-      })),
+      updateLyricLine: (id, updates) => set((state) => {
+        if (!state.parsedLyrics) return {};
+
+        // 查找要更新的行
+        const currentLyrics = [...state.parsedLyrics];
+        const lineIndex = currentLyrics.findIndex(line => line.id === id);
+        
+        if (lineIndex === -1) return {};
+        
+        // 原地更新该行，不改变其在数组中的位置
+        currentLyrics[lineIndex] = { ...currentLyrics[lineIndex], ...updates };
+        
+        return { parsedLyrics: currentLyrics };
+      }),
       
       // 添加新歌词行
       addLyricLine: (time, text = '') => {
         const id = Date.now().toString(36) + Math.random().toString(36).substr(2);
-        set((state) => ({
-          parsedLyrics: [
-            ...(state.parsedLyrics || []),
-            { id, time, text, isInterlude: false }
-          ]
-        }));
+        set((state) => {
+          const newLine = { id, time, text, isInterlude: false };
+          const currentLyrics = state.parsedLyrics || [];
+          
+          // 优化：插入排序而不是全量排序
+          // 找到第一个时间戳大于新行时间的位置
+          const insertIndex = currentLyrics.findIndex(line => line.time > time);
+          
+          let updatedLyrics: LyricLine[];
+          
+          if (insertIndex === -1) {
+            // 如果没找到（说明新行时间最大，或者列表为空），添加到末尾
+            updatedLyrics = [...currentLyrics, newLine];
+          } else {
+            // 插入到找到的位置之前
+            updatedLyrics = [
+              ...currentLyrics.slice(0, insertIndex),
+              newLine,
+              ...currentLyrics.slice(insertIndex)
+            ];
+          }
+          
+          return {
+            parsedLyrics: updatedLyrics
+          };
+        });
         return id;
       },
       

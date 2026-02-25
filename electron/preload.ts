@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 设备码授权轮询
   pollDeviceCode: (deviceCode: string) => ipcRenderer.invoke('poll-device-code', deviceCode),
   
+  // 停止设备码授权轮询
+  stopPollDeviceCode: () => ipcRenderer.invoke('stop-poll-device-code'),
+  
   // 监听授权成功事件
   onAuthSuccess: (callback: (data: any) => void) => {
     ipcRenderer.on('auth-success', (_event, data) => callback(data));

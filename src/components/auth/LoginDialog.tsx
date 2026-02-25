@@ -44,6 +44,9 @@ export function LoginDialog() {
       const handleAuthSuccess = async (tokenData: any) => {
         console.log('收到授权成功事件:', tokenData);
         
+        // 停止轮询
+        await window.electronAPI.stopPollDeviceCode();
+        
         // 使用authService处理登录成功
         baiduAuth.handleLoginSuccess(tokenData);
         
@@ -67,7 +70,25 @@ export function LoginDialog() {
       };
     }
   }, [checkAuthStatus]);
-
+  
+  // 组件卸载时停止轮询
+  React.useEffect(() => {
+    return () => {
+      if (window.electronAPI && polling) {
+        window.electronAPI.stopPollDeviceCode();
+      }
+    };
+  }, [polling]);
+  
+  // 监听对话框关闭，停止轮询
+  React.useEffect(() => {
+    if (!isOpen && polling && window.electronAPI) {
+      console.log('对话框关闭，停止轮询');
+      window.electronAPI.stopPollDeviceCode();
+      setPolling(false);
+    }
+  }, [isOpen, polling]);
+  
   const handleLogin = async () => {
     setLoading(true);
     setMessage('正在获取设备码...');
@@ -98,6 +119,10 @@ export function LoginDialog() {
       setMessage('登录发生错误，请重试');
       setLoading(false);
       setPolling(false);
+      // 停止轮询
+      if (window.electronAPI) {
+        window.electronAPI.stopPollDeviceCode();
+      }
     }
   };
 
