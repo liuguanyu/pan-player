@@ -107,17 +107,35 @@ export const parsePlainText = (textContent: string): LyricLine[] => {
   
   for (const line of textLines) {
     const trimmed = line.trim();
-    if (trimmed) {
-      lines.push({
-        id: generateLyricId(),
-        time: -1, // 使用-1表示未设置时间
-        text: trimmed,
-        isInterlude: false
-      });
-    }
+    // 保留空行，不再过滤
+    lines.push({
+      id: generateLyricId(),
+      time: -1, // 使用-1表示未设置时间
+      text: trimmed, // 可以是空字符串
+      isInterlude: false
+    });
   }
   
   return lines;
+};
+
+/**
+ * 解析 LRC 时间标签字符串为秒数
+ * @param timeStr 时间字符串，格式: "mm:ss.xx" 或 "mm:ss"
+ * @returns 时间（秒）
+ */
+export const parseLRCTimeTag = (timeStr: string): number => {
+  const parts = timeStr.split(':');
+  if (parts.length !== 2) return -1;
+  
+  const minutes = parseInt(parts[0], 10);
+  const secParts = parts[1].split('.');
+  const seconds = parseInt(secParts[0], 10);
+  const milliseconds = secParts[1] ? parseInt(secParts[1].padEnd(3, '0'), 10) : 0;
+  
+  if (isNaN(minutes) || isNaN(seconds) || isNaN(milliseconds)) return -1;
+  
+  return minutes * 60 + seconds + milliseconds / 1000;
 };
 
 /**

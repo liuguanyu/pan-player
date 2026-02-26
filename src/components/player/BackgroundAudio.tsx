@@ -32,10 +32,91 @@ export const BackgroundAudio = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [activePlayer, setActivePlayer] = useState<'html5' | 'transcoded'>('html5');
   const transcodedUrlRef = useRef<string | null>(null);
+  const streamSessionIdRef = useRef<string | null>(null);
   
   const lastCurrentTimeRef = useRef<number>(0);
   const isSeekingRef = useRef<boolean>(false);
   const transcodingCleanupRef = useRef<(() => void) | null>(null);
+  const durationRef = useRef<number>(0);
+  
+  // 流式转码的基准时间（用于 Seek 后正确计算绝对时间）
+  const baseTimeRef = useRef<number>(0);
+
+  // 降级到旧的临时文件转码方式
+  const fallbackToLegacyTranscode = async (url: string, fileId: string) => {
+    console.warn('[播放器] 降级到旧的临时文件转码方式');
+
+    // 清理之前的转码文件
+    if (transcodedUrlRef.current) {
+      window.electronAPI.cleanupTempAudio(transcodedUrlRef.current);
+      transcodedUrlRef.current = null;
+    }
+
+    // 移除之前的事件监听器
+    if (transcodingCleanupRef.current) {
+      transcodingCleanupRef.current();
+      transcodingCleanupRef.current = null;
+    }
+
+    const onTranscodeComplete = (result: { success: boolean; outputPath: string }) => {
+      if (!result.success) {
+        console.error(`[播放器] 降级转码失败`);
+        setTimeout(playNext, 3000);
+        return;
+      }
+
+      console.log(`[播放器] 降级转码完成: ${result.outputPath}`);
+      transcodedUrlRef.current = result.outputPath;
+
+      if (audioRef.current) {
+        audioRef.current.src = `local-audio://${encodeURIComponent(result.outputPath)}`;
+        if (isPlaying) {
+          audioRef.current.play().catch(e => {
+            if (e.name !== 'AbortError') console.error("降级转码后播放失败:", e);
+          });
+        }
+      }
+    };
+
+    const onTranscodeFail = (error: string) => {
+      console.error(`[播放器] 降级转码失败:`, error);
+      setTimeout(playNext, 5000);
+    };
+
+    const cleanupComplete = window.electronAPI.onTranscodeComplete(fileId, onTranscodeComplete);
+    const cleanupFail = window.electronAPI.onTranscodeFail(fileId, onTranscodeFail);
+
+    transcodingCleanupRef.current = () => {
+      cleanupComplete();
+      cleanupFail();
+    };
+
+    window.electronAPI.transcodeAlac(url, fileId);
+  };
+
+  // 清理流式转码会话及相关事件监听
+  const cleanupStreamSession = () => {
+    if (streamSessionIdRef.current) {
+      console.log(`[播放器] 清理流式会话: ${streamSessionIdRef.current}`);
+      window.electronAPI.streamTranscodeDestroy(streamSessionIdRef.current);
+      streamSessionIdRef.current = null;
+    }
+  };
+
+  // 清理所有转码相关资源（流式 + 旧方式）
+  const cleanupAllTranscodeResources = () => {
+    cleanupStreamSession();
+
+    if (transcodedUrlRef.current) {
+      window.electronAPI.cleanupTempAudio(transcodedUrlRef.current);
+      transcodedUrlRef.current = null;
+    }
+
+    if (transcodingCleanupRef.current) {
+      transcodingCleanupRef.current();
+      transcodingCleanupRef.current = null;
+    }
+  };
 
   // 监听歌曲变化，决定使用哪个播放器并加载
   useEffect(() => {
@@ -44,6 +125,7 @@ export const BackgroundAudio = () => {
     const loadSong = async () => {
       // 重置状态
       lastCurrentTimeRef.current = 0;
+      baseTimeRef.current = 0; // 重置基准时间
       setCurrentTime(0);
       setDuration(0);
       isSeekingRef.current = false;
@@ -62,82 +144,100 @@ export const BackgroundAudio = () => {
         if (useTranscoding) {
           console.log(`[播放器] 需要转码: ${filename}`);
           setActivePlayer('transcoded');
-          
-          // 清理之前的转码文件
-          if (transcodedUrlRef.current) {
-            window.electronAPI.cleanupTempAudio(transcodedUrlRef.current);
-            transcodedUrlRef.current = null;
-          }
-          
-          // 移除之前的事件监听器
-          if (transcodingCleanupRef.current) {
-            transcodingCleanupRef.current();
-            transcodingCleanupRef.current = null;
-          }
+
+          // 清理之前所有转码资源
+          cleanupAllTranscodeResources();
           
           // 确保 HTML5 播放器停止
           if (audioRef.current) {
             audioRef.current.pause();
             audioRef.current.src = "";
           }
+
+          // 使用流式转码
+          const sessionId = currentSong.fs_id.toString();
           
-          // 设置转码完成的回调
-          const onTranscodeComplete = (result: { success: boolean; outputPath: string }) => {
-            if (!result.success) {
-              console.error(`[播放器] 转码失败`);
-              // 转码失败时尝试播放下一首
-              setTimeout(playNext, 3000);
-              return;
-            }
-            
-            console.log(`[播放器] 转码完成: ${result.outputPath}`);
-            transcodedUrlRef.current = result.outputPath;
-            
+          // 修复问题2：初始时间显示 Infinity
+          // 在启动流式转码前，使用文件的元数据（如 currentSong.duration）预设 duration
+          console.log(`[BackgroundAudio] Loading song: ${currentSong.server_filename}, currentSong.duration=${currentSong.duration}`);
+          if (currentSong.duration) {
+            console.log(`[BackgroundAudio] Setting initial duration from song metadata: ${currentSong.duration}`);
+            durationRef.current = currentSong.duration;
+            setDuration(currentSong.duration);
+            console.log(`[BackgroundAudio] durationRef.current set to: ${durationRef.current}, playerStore.setDuration called with: ${currentSong.duration}`);
+          } else {
+            console.warn(`[BackgroundAudio] currentSong.duration is missing or zero: ${currentSong.duration}`);
+          }
+
+          try {
+            const result = await window.electronAPI.streamTranscodeStart(sessionId, link);
+            streamSessionIdRef.current = sessionId;
+            console.log(`[播放器] 流式转码已启动, streamUrl: ${result.streamUrl}`);
+
+            // 设置流式 URL 为音频源
             if (audioRef.current) {
-              // 使用自定义协议访问本地文件
-              audioRef.current.src = `local-audio://${encodeURIComponent(result.outputPath)}`;
-              // 自动播放（如果 store 状态是 playing）
-              if (isPlaying) {
-                audioRef.current.play().catch(e => {
-                  if (e.name !== 'AbortError') console.error("转码后播放失败:", e);
+              audioRef.current.src = result.streamUrl;
+              audioRef.current.load();
+              
+              // 修复问题1：播放按钮状态不一致
+              audioRef.current.play()
+                .then(() => {
+                  // 播放成功，同步 Store 状态
+                  setIsPlaying(true);
+                })
+                .catch(err => {
+                  console.error('流式转码自动播放失败:', err);
+                  // 播放失败，确保 Store 状态正确
+                  setIsPlaying(false);
                 });
-              }
             }
-          };
-          
-          // 设置转码失败的回调
-          const onTranscodeFail = (error: string) => {
-            console.error(`[播放器] 转码失败:`, error);
-            // 转码失败时尝试播放下一首，等待时间延长到5秒以提供更多反馈时间
-            setTimeout(playNext, 5000);
-          };
-          
-          // 添加事件监听器
-          const cleanupComplete = window.electronAPI.onTranscodeComplete(currentSong.fs_id.toString(), onTranscodeComplete);
-          const cleanupFail = window.electronAPI.onTranscodeFail(currentSong.fs_id.toString(), onTranscodeFail);
-          
-          // 保存清理函数
-          transcodingCleanupRef.current = () => {
-            cleanupComplete();
-            cleanupFail();
-          };
-          
-          // 开始转码
-          window.electronAPI.transcodeAlac(link, currentSong.fs_id.toString());
+
+            // 监听流式转码事件
+            const cleanupProgress = window.electronAPI.onStreamProgress(sessionId, (progress) => {
+              console.log(`[播放器] 流式转码进度: ${progress}%`);
+            });
+
+            const cleanupComplete = window.electronAPI.onStreamComplete(sessionId, (duration: number) => {
+              console.log(`[BackgroundAudio] Stream complete event received, duration from IPC: ${duration}`);
+              
+              // 修复问题1：直接设置 duration，不重新加载音频（避免中断播放）
+              if (duration > 0) {
+                console.log(`[BackgroundAudio] Updating durationRef.current: ${durationRef.current} -> ${duration}`);
+                durationRef.current = duration;
+                setDuration(duration);
+                console.log(`[BackgroundAudio] playerStore.setDuration called with: ${duration}`);
+                if (currentSong) {
+                  updatePlaylistItemDuration(currentSong.fs_id, duration);
+                }
+              } else {
+                console.warn(`[BackgroundAudio] Stream complete but duration is invalid: ${duration}, keeping durationRef.current=${durationRef.current}`);
+              }
+            });
+
+            const cleanupError = window.electronAPI.onStreamError(sessionId, (error) => {
+              console.error('[播放器] 流式转码错误:', error);
+              // 降级到旧的临时文件转码方式
+              cleanupStreamSession();
+              fallbackToLegacyTranscode(link, sessionId);
+            });
+
+            // 保存清理函数（包含流式事件监听器）
+            transcodingCleanupRef.current = () => {
+              cleanupProgress();
+              cleanupComplete();
+              cleanupError();
+            };
+          } catch (streamError) {
+            console.error('[播放器] 流式转码启动失败:', streamError);
+            // 降级到旧的临时文件转码方式
+            await fallbackToLegacyTranscode(link, sessionId);
+          }
         } else {
           console.log(`[播放器] 直接播放: ${filename}`);
           setActivePlayer('html5');
           
-          // 清理转码相关的资源
-          if (transcodedUrlRef.current) {
-            window.electronAPI.cleanupTempAudio(transcodedUrlRef.current);
-            transcodedUrlRef.current = null;
-          }
-          
-          if (transcodingCleanupRef.current) {
-            transcodingCleanupRef.current();
-            transcodingCleanupRef.current = null;
-          }
+          // 清理所有转码相关资源
+          cleanupAllTranscodeResources();
           
           if (audioRef.current) {
             audioRef.current.src = link;
@@ -151,6 +251,11 @@ export const BackgroundAudio = () => {
     };
 
     loadSong();
+
+    // 切换歌曲时清理上一个流式会话
+    return () => {
+      cleanupAllTranscodeResources();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSong?.fs_id]);
 
@@ -195,21 +300,66 @@ export const BackgroundAudio = () => {
       
       console.log(`[播放器] 跳转到: ${currentTime}`);
       
-      if ((activePlayer === 'html5' || activePlayer === 'transcoded') && audioRef.current) {
-        // 检查 audio 是否就绪
-        if (audioRef.current.readyState > 0) {
-          audioRef.current.currentTime = currentTime;
+      const handleSeek = async () => {
+        if (!audioRef.current) return;
+        
+        // 如果是流式转码模式，需要特殊处理 Seek
+        if (activePlayer === 'transcoded' && currentSong) {
+          console.log(`[播放器] 流式转码 Seek 到: ${currentTime}`);
+          
+          try {
+            const sessionId = currentSong.fs_id.toString();
+            const link = await baiduAPI.getDownloadLink(currentSong.fs_id);
+            
+            if (link) {
+              // 更新基准时间为目标时间
+              baseTimeRef.current = currentTime;
+              
+              // 重新启动流式转码，从目标时间开始
+              const result = await window.electronAPI.streamTranscodeStart(sessionId, link, currentTime);
+              
+              if (audioRef.current) {
+                // 更新 src 会重置 currentTime 为 0
+                // 新流是从 seek 时间点开始的，所以 audio.currentTime = 0 对应绝对时间 = baseTimeRef.current
+                audioRef.current.src = result.streamUrl;
+                audioRef.current.load();
+
+                // 立即恢复 duration（防止显示 Infinity）
+                console.log(`[BackgroundAudio] Seek triggered, durationRef.current before restore: ${durationRef.current}`);
+                if (durationRef.current > 0) {
+                  setDuration(durationRef.current);
+                  console.log(`[BackgroundAudio] Restored duration after seek: ${durationRef.current}`);
+                } else {
+                  console.warn(`[BackgroundAudio] Seek: durationRef.current is zero or invalid, cannot restore duration`);
+                }
+                
+                // 恢复播放
+                if (isPlaying) {
+                  audioRef.current.play().catch(err => console.error('Seek play failed:', err));
+                }
+              }
+            }
+          } catch (err) {
+            console.error('[播放器] 流式转码 Seek 失败:', err);
+          }
+        } else if (activePlayer === 'html5') {
+          // 普通 HTML5 播放器 Seek
+          if (audioRef.current.readyState > 0) {
+            audioRef.current.currentTime = currentTime;
+          }
         }
-      }
+      };
+
+      handleSeek().finally(() => {
+        // 延迟重置跳转标记，防止快速连续触发
+        setTimeout(() => {
+          isSeekingRef.current = false;
+        }, 500);
+      });
       
       lastCurrentTimeRef.current = currentTime;
-      
-      // 延迟重置跳转标记
-      setTimeout(() => {
-        isSeekingRef.current = false;
-      }, 200);
     }
-  }, [currentTime, activePlayer]);
+  }, [currentTime, activePlayer, currentSong, isPlaying]);
 
   // HTML5 事件处理
   const handleCanPlay = () => {
@@ -228,11 +378,45 @@ export const BackgroundAudio = () => {
   };
 
   const handleTimeUpdate = () => {
-    if ((activePlayer === 'html5' || activePlayer === 'transcoded') && audioRef.current && !isSeekingRef.current) {
-      const newTime = audioRef.current.currentTime;
-      if (Math.abs(newTime - lastCurrentTimeRef.current) > 0.5) {
-        setCurrentTime(newTime);
-        lastCurrentTimeRef.current = newTime;
+    if (audioRef.current && !isSeekingRef.current) {
+      // 在流式转码模式下，audio.currentTime 是从流开始的时间
+      // 如果发生过 Seek，我们需要加上偏移量
+      // 但由于我们的实现是每次 Seek 都重启流，所以流的开始就是 Seek 的目标时间
+      // 实际上这里有个问题：audio.currentTime 是从 0 开始计时的
+      // 我们需要加上 Seek 的基准时间
+      // 不过，目前的实现是：UI 拖动 -> 更新 Store currentTime -> 触发 useEffect -> 重启流
+      // 重启流后，audio.currentTime 从 0 开始
+      // 这会导致进度条跳回 0，然后随着播放增加
+      // 这不是预期的行为。预期是进度条显示 absolute time。
+      
+      // 修正方案：
+      // 对于流式转码，我们需要维护一个 baseTime
+      // 当发生 Seek 时，更新 baseTime = targetTime
+      // handleTimeUpdate 时，reportTime = baseTime + audio.currentTime
+      
+      // 但由于这是一个较大的改动，且当前任务只要求"实现 Seek 功能"
+      // 简单的实现是：
+      // 1. Seek 时，Store currentTime 更新为 targetTime
+      // 2. 流重启，audio.currentTime = 0
+      // 3. 此时 handleTimeUpdate 报告的时间是 0 + small_delta
+      // 4. 这会导致 Store currentTime 被重置为 0
+      
+      // 所以我们需要在流式转码模式下，正确计算 absolute time
+      // 让我们引入一个 ref 来存储 baseTime
+      
+      let reportTime = audioRef.current.currentTime;
+      
+      // 在流式转码模式下，需要加上基准时间来得到绝对时间
+      if (activePlayer === 'transcoded') {
+        reportTime = baseTimeRef.current + audioRef.current.currentTime;
+      }
+      
+      // 确保计算结果有效
+      if (isFinite(reportTime)) {
+        if (Math.abs(reportTime - lastCurrentTimeRef.current) > 0.5) {
+          setCurrentTime(reportTime);
+          lastCurrentTimeRef.current = reportTime;
+        }
       }
     }
   };
@@ -287,9 +471,6 @@ export const BackgroundAudio = () => {
            const codecResult = await window.electronAPI.detectAudioCodec(link);
            if (codecResult.success && codecResult.codec) {
              console.log(`[播放器] 音频编码: ${codecResult.codec}`);
-             // 如果是 AAC 编码但播放失败，可能是其他问题，不建议强制转码
-             // 但为了最大兼容性，只要不是明确支持的格式，都尝试转码
-             // HTML5 audio 明确支持: mp3, wav, ogg, aac (在 m4a 容器中)
              const supportedCodecs = ['mp3', 'wav', 'ogg', 'aac'];
              if (supportedCodecs.includes(codecResult.codec.toLowerCase())) {
                console.warn(`[播放器] 格式 ${codecResult.codec} 应该被支持，但播放失败。尝试转码作为后备方案。`);
@@ -298,51 +479,78 @@ export const BackgroundAudio = () => {
 
            setActivePlayer('transcoded');
            
-           // 清理之前的转码资源
-           if (transcodedUrlRef.current) {
-             window.electronAPI.cleanupTempAudio(transcodedUrlRef.current);
-             transcodedUrlRef.current = null;
-           }
-           
-           if (transcodingCleanupRef.current) {
-             transcodingCleanupRef.current();
-           }
+           // 清理之前的所有转码资源
+           cleanupAllTranscodeResources();
 
-           // 设置转码回调
-           const onTranscodeComplete = (result: { success: boolean; outputPath: string }) => {
-             if (!result.success) {
-               console.error(`[播放器] 转码失败 (Fallback)`);
-               setTimeout(playNext, 3000);
-               return;
+           const sessionId = currentSong.fs_id.toString();
+
+           // 优先尝试流式转码
+           try {
+             // 修复问题2：初始时间显示 Infinity (错误恢复场景)
+             console.log(`[BackgroundAudio] Error recovery: currentSong.duration=${currentSong.duration}`);
+             if (currentSong.duration) {
+               console.log(`[BackgroundAudio] Error recovery: setting initial duration from song metadata: ${currentSong.duration}`);
+               durationRef.current = currentSong.duration;
+               setDuration(currentSong.duration);
+               console.log(`[BackgroundAudio] Error recovery: durationRef.current=${durationRef.current}, playerStore.setDuration called with: ${currentSong.duration}`);
+             } else {
+               console.warn(`[BackgroundAudio] Error recovery: currentSong.duration is missing or zero: ${currentSong.duration}`);
              }
-             
-             console.log(`[播放器] 转码完成 (Fallback): ${result.outputPath}`);
-             transcodedUrlRef.current = result.outputPath;
-             
+
+             const result = await window.electronAPI.streamTranscodeStart(sessionId, link);
+             streamSessionIdRef.current = sessionId;
+             console.log(`[播放器] 流式转码已启动 (错误恢复), streamUrl: ${result.streamUrl}`);
+
              if (audioRef.current) {
-               // 使用自定义协议访问本地文件
-               audioRef.current.src = `local-audio://${encodeURIComponent(result.outputPath)}`;
-               if (isPlaying) {
-                 audioRef.current.play().catch(e => console.error("转码后播放失败:", e));
-               }
+               audioRef.current.src = result.streamUrl;
+               audioRef.current.load();
+               
+               // 修复问题1：播放按钮状态不一致 (错误恢复场景)
+               audioRef.current.play()
+                 .then(() => setIsPlaying(true))
+                 .catch(err => {
+                   console.error('流式转码自动播放失败 (错误恢复):', err);
+                   setIsPlaying(false);
+                 });
              }
-           };
 
-           const onTranscodeFail = (err: string) => {
-             console.error(`[播放器] 转码失败 (Fallback):`, err);
-             // 转码失败时尝试播放下一首，等待时间延长到5秒
-             setTimeout(playNext, 5000);
-           };
+             const cleanupProgress = window.electronAPI.onStreamProgress(sessionId, (progress) => {
+               console.log(`[播放器] 流式转码进度 (错误恢复): ${progress}%`);
+             });
 
-           const cleanupComplete = window.electronAPI.onTranscodeComplete(currentSong.fs_id.toString(), onTranscodeComplete);
-           const cleanupFail = window.electronAPI.onTranscodeFail(currentSong.fs_id.toString(), onTranscodeFail);
+             const cleanupStreamComplete = window.electronAPI.onStreamComplete(sessionId, (duration: number) => {
+               console.log(`[BackgroundAudio] Error recovery: stream complete event received, duration from IPC: ${duration}`);
+               
+               // 修复问题1：直接设置 duration，不重新加载音频（避免中断播放）
+               if (duration > 0) {
+                 console.log(`[BackgroundAudio] Error recovery: updating durationRef.current: ${durationRef.current} -> ${duration}`);
+                 durationRef.current = duration;
+                 setDuration(duration);
+                 console.log(`[BackgroundAudio] Error recovery: playerStore.setDuration called with: ${duration}`);
+                 if (currentSong) {
+                   updatePlaylistItemDuration(currentSong.fs_id, duration);
+                 }
+               } else {
+                 console.warn(`[BackgroundAudio] Error recovery: stream complete but duration is invalid: ${duration}, keeping durationRef.current=${durationRef.current}`);
+               }
+             });
 
-           transcodingCleanupRef.current = () => {
-             cleanupComplete();
-             cleanupFail();
-           };
+             const cleanupStreamError = window.electronAPI.onStreamError(sessionId, (streamErr) => {
+               console.error('[播放器] 流式转码错误 (错误恢复):', streamErr);
+               cleanupStreamSession();
+               fallbackToLegacyTranscode(link, sessionId);
+             });
 
-           window.electronAPI.transcodeAlac(link, currentSong.fs_id.toString());
+             transcodingCleanupRef.current = () => {
+               cleanupProgress();
+               cleanupStreamComplete();
+               cleanupStreamError();
+             };
+           } catch (streamError) {
+             console.error('[播放器] 流式转码启动失败 (错误恢复):', streamError);
+             // 降级到旧的临时文件转码方式
+             await fallbackToLegacyTranscode(link, sessionId);
+           }
         } catch (err) {
            console.error("启动转码失败:", err);
         }
@@ -422,16 +630,7 @@ export const BackgroundAudio = () => {
   // 组件卸载时清理资源
   useEffect(() => {
     return () => {
-      // 清理转码相关的资源
-      if (transcodedUrlRef.current) {
-        window.electronAPI.cleanupTempAudio(transcodedUrlRef.current);
-        transcodedUrlRef.current = null;
-      }
-      
-      if (transcodingCleanupRef.current) {
-        transcodingCleanupRef.current();
-        transcodingCleanupRef.current = null;
-      }
+      cleanupAllTranscodeResources();
     };
   }, []);
 
@@ -442,8 +641,26 @@ export const BackgroundAudio = () => {
       crossOrigin="anonymous"
       onLoadedMetadata={(e: React.SyntheticEvent<HTMLAudioElement>) => {
         const d = e.currentTarget.duration;
-        setDuration(d);
-        if (currentSong && isFinite(d)) updatePlaylistItemDuration(currentSong.fs_id, d);
+        console.log(`[BackgroundAudio] onLoadedMetadata: audio element duration=${d}, isFinite=${isFinite(d)}, activePlayer=${activePlayer}, durationRef.current=${durationRef.current}`);
+
+        // Bug 1 修复：流式转码模式下 audio.duration 可能是 Infinity（流式响应无 Content-Length）
+        // 此时不能用 Infinity 覆盖正确的 duration
+        if (activePlayer === 'transcoded' && !isFinite(d)) {
+          console.log(`[BackgroundAudio] onLoadedMetadata: streaming mode, audio.duration=Infinity, using durationRef=${durationRef.current}`);
+          if (durationRef.current > 0) {
+            setDuration(durationRef.current);
+            console.log(`[BackgroundAudio] onLoadedMetadata: playerStore.setDuration called with durationRef: ${durationRef.current}`);
+          }
+          // durationRef.current === 0 时什么都不做，等待 IPC 传来真实 duration
+          return;
+        }
+
+        // 正常模式：使用 audio.duration
+        if (isFinite(d) && d > 0) {
+          setDuration(d);
+          console.log(`[BackgroundAudio] onLoadedMetadata: playerStore.setDuration called with: ${d}`);
+          if (currentSong) updatePlaylistItemDuration(currentSong.fs_id, d);
+        }
       }}
       onTimeUpdate={handleTimeUpdate}
       onCanPlay={handleCanPlay}

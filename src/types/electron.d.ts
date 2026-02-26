@@ -51,6 +51,14 @@ export interface ElectronAPI {
   // 静音控制
   updateMuteState: (isMuted: boolean) => void;
   onMuteChange: (callback: (isMuted: boolean) => void) => () => void;
+
+  // 流式转码 API
+  streamTranscodeStart: (sessionId: string, sourceUrl: string, startTimeSeconds?: number) => Promise<{ streamUrl: string; sessionId: string }>;
+  streamTranscodeDestroy: (sessionId: string) => Promise<void>;
+  streamTranscodeStatus: (sessionId: string) => Promise<{ state: string; bufferedBytes: number; isComplete: boolean } | null>;
+  onStreamProgress: (sessionId: string, callback: (progress: number) => void) => () => void;
+  onStreamComplete: (sessionId: string, callback: (duration: number) => void) => () => void;
+  onStreamError: (sessionId: string, callback: (error: string) => void) => () => void;
 }
 
 declare global {

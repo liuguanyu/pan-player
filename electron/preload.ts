@@ -107,4 +107,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('mute-changed', handler);
     return () => ipcRenderer.removeListener('mute-changed', handler);
   },
+
+  // 流式转码 API
+  streamTranscodeStart: (sessionId: string, sourceUrl: string, startTimeSeconds?: number) =>
+    ipcRenderer.invoke('stream-transcode-start', sessionId, sourceUrl, startTimeSeconds),
+
+  streamTranscodeDestroy: (sessionId: string) =>
+    ipcRenderer.invoke('stream-transcode-destroy', sessionId),
+
+  streamTranscodeStatus: (sessionId: string) =>
+    ipcRenderer.invoke('stream-transcode-status', sessionId),
+
+  onStreamProgress: (sessionId: string, callback: (progress: number) => void) => {
+    const channel = `stream-progress-${sessionId}`;
+    const handler = (_event: any, progress: number) => callback(progress);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+
+  onStreamComplete: (sessionId: string, callback: (duration: number) => void) => {
+    const channel = `stream-complete-${sessionId}`;
+    const handler = (_event: any, duration: number) => callback(duration);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+
+  onStreamError: (sessionId: string, callback: (error: string) => void) => {
+    const channel = `stream-error-${sessionId}`;
+    const handler = (_event: any, error: string) => callback(error);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
 });

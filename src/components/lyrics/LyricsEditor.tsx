@@ -13,7 +13,7 @@ import {
   Cloud,
   CloudUpload
 } from 'lucide-react';
-import { parsePlainText, generateLRC, formatLRCTime, parseLRC } from '@/lib/lrc-parser';
+import { parsePlainText, generateLRC, formatLRCTime, parseLRC, parseLRCTimeTag } from '@/lib/lrc-parser';
 import { baiduAPI } from '@/services/baidu-api.service';
 import {
   Dialog,
@@ -31,39 +31,53 @@ export const LyricsEditor: React.FC = () => {
     currentTime,
     updateLyricLine,
     addLyricLine,
+    insertLyricLine,
     deleteLyricLine,
     currentSong
   } = usePlayerStore();
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingText, setEditingText] = useState('');
+  // 选中状态（单击高亮，不触发编辑）
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  // 编辑状态（双击进入，与选中状态完全分离）
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
+
   const [textInput, setTextInput] = useState('');
   const [showTextInput, setShowTextInput] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showOverwriteDialog, setShowOverwriteDialog] = useState(false);
   const [pendingUploadPath, setPendingUploadPath] = useState<string>('');
-  const editInputRef = useRef<HTMLInputElement>(null);
+
+  // 非受控输入 ref —— 直接读取 DOM 值，彻底避免受控输入 + IME 冲突
+  const editTextRef = useRef<HTMLInputElement>(null);
+  const editTimeRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 当进入编辑状态时自动聚焦输入框
+  // editingLineId 变化时延迟聚焦文本输入框
+  // 使用双重 requestAnimationFrame 确保 React DOM 完全渲染后再 focus
   useEffect(() => {
-    if (editingId && editInputRef.current) {
-      editInputRef.current.focus();
-      editInputRef.current.select();
+    if (editingLineId) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (editTextRef.current) {
+            editTextRef.current.focus();
+            editTextRef.current.select();
+          }
+        });
+      });
     }
-  }, [editingId]);
+  }, [editingLineId]);
 
-  // 打开纯文本文件
+  // ---------- 文件操作 ----------
+
   const handleImportText = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.txt';
-    
+
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
-
       try {
         const content = await file.text();
         const lyrics = parsePlainText(content);
@@ -78,16 +92,14 @@ export const LyricsEditor: React.FC = () => {
     input.click();
   };
 
-  // 打开LRC文件进行二次编辑
   const handleImportLRC = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.lrc';
-    
+
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
-
       try {
         const content = await file.text();
         const lyrics = parseLRC(content);
@@ -102,20 +114,17 @@ export const LyricsEditor: React.FC = () => {
     input.click();
   };
 
-  // 清空所有歌词
   const handleClear = () => {
     if (window.confirm('确定要清空所有歌词吗？')) {
       setParsedLyrics([]);
     }
   };
 
-  // 导出LRC文件
   const handleExport = () => {
     if (!parsedLyrics || parsedLyrics.length === 0) {
       alert('没有可导出的歌词');
       return;
     }
-
     const lrcContent = generateLRC(parsedLyrics);
     const blob = new Blob([lrcContent], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -128,37 +137,27 @@ export const LyricsEditor: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  // 上传LRC到百度云盘
   const handleUploadToCloud = async () => {
     if (!currentSong) {
       alert('请先选择一首歌曲');
       return;
     }
-
     if (!parsedLyrics || parsedLyrics.length === 0) {
       alert('没有可上传的歌词');
       return;
     }
-
-    // 生成LRC文件路径（与音频文件同目录，同名但扩展名为.lrc）
     const audioPath = currentSong.path;
     const lrcPath = audioPath.replace(/\.[^.]+$/, '.lrc');
-
     if (lrcPath === audioPath) {
       alert('无法生成LRC文件路径');
       return;
     }
-
     try {
-      // 检查LRC文件是否已存在
       const exists = await baiduAPI.checkLrcFileExists(lrcPath);
-      
       if (exists) {
-        // 如果存在，显示覆盖确认对话框
         setPendingUploadPath(lrcPath);
         setShowOverwriteDialog(true);
       } else {
-        // 如果不存在，直接上传
         await performUpload(lrcPath);
       }
     } catch (error) {
@@ -167,22 +166,16 @@ export const LyricsEditor: React.FC = () => {
     }
   };
 
-  // 执行实际的上传操作
   const performUpload = async (lrcPath: string) => {
     setIsUploading(true);
     setUploadProgress(0);
-
     try {
       const lrcContent = generateLRC(parsedLyrics!);
-      
       const result = await baiduAPI.uploadLrcFile(
         lrcPath,
         lrcContent,
-        (progress) => {
-          setUploadProgress(progress);
-        }
+        (progress) => setUploadProgress(progress)
       );
-
       if (result.success) {
         alert('LRC歌词上传成功！');
       } else {
@@ -198,45 +191,59 @@ export const LyricsEditor: React.FC = () => {
     }
   };
 
-  // 确认覆盖并上传
   const handleConfirmOverwrite = async () => {
     setShowOverwriteDialog(false);
     await performUpload(pendingUploadPath);
     setPendingUploadPath('');
   };
 
-  // 取消覆盖
   const handleCancelOverwrite = () => {
     setShowOverwriteDialog(false);
     setPendingUploadPath('');
   };
 
-  // 从文本框导入歌词
   const handleImportFromText = () => {
     if (!textInput.trim()) {
       alert('请先输入歌词文本');
       return;
     }
-    
     const lyrics = parsePlainText(textInput);
     setParsedLyrics(lyrics);
     setTextInput('');
     setShowTextInput(false);
-    alert('歌词导入成功！请为每行设置时间。');
+    alert('歌词导入成功！请为每句歌词设置时间。');
   };
 
-  // 添加间奏
+  // ---------- 行操作 ----------
+
   const handleAddInterlude = () => {
+    if (selectedLineId) {
+      const selectedIndex = parsedLyrics?.findIndex(line => line.id === selectedLineId) ?? -1;
+      if (selectedIndex >= 0) {
+        const id = insertLyricLine(selectedIndex + 1, currentTime, '♪ 间奏 ♪');
+        updateLyricLine(id, { isInterlude: true });
+        return;
+      }
+    }
     const id = addLyricLine(currentTime, '♪ 间奏 ♪');
     updateLyricLine(id, { isInterlude: true });
   };
 
-  // 设置当前行为当前播放时间
+  const handleAddEmptyLine = () => {
+    if (selectedLineId) {
+      const selectedIndex = parsedLyrics?.findIndex(line => line.id === selectedLineId) ?? -1;
+      if (selectedIndex >= 0) {
+        insertLyricLine(selectedIndex + 1, currentTime, '');
+        return;
+      }
+    }
+    addLyricLine(currentTime, '');
+  };
+
   const handleSetCurrentTime = (id: string) => {
     updateLyricLine(id, { time: currentTime });
   };
 
-  // 跳转到指定时间
   const handleJumpToTime = (time: number) => {
     const audio = document.querySelector('audio');
     if (audio) {
@@ -244,34 +251,76 @@ export const LyricsEditor: React.FC = () => {
     }
   };
 
-  // 开始编辑歌词文本
-  const handleStartEdit = (id: string, text: string, isInterlude?: boolean) => {
-    if (isInterlude) return; // 间奏不允许编辑文本
-    setEditingId(id);
-    setEditingText(text);
+  // ---------- 编辑模式（核心重构部分）----------
+
+  /**
+   * 进入编辑模式（双击触发）。
+   * editingLineId 与 selectedLineId 完全独立。
+   * 不依赖任何受控状态来存储输入中间值——使用非受控 ref 直接读取 DOM。
+   */
+  const handleStartEdit = (lineId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // 阻止冒泡，防止触发行容器的 onClick（setSelectedLineId）
+    setEditingLineId(lineId);
+    setSelectedLineId(lineId);
+    // 聚焦在 useEffect 中延迟执行，确保 DOM 已渲染
   };
 
-  // 保存编辑的歌词文本
-  const handleSaveEdit = () => {
-    if (editingId && editingText.trim()) {
-      updateLyricLine(editingId, { text: editingText.trim() });
+  /**
+   * 保存编辑：从非受控 ref 读取当前值并写入 store。
+   */
+  const handleSaveEdit = (lineId: string, isInterlude?: boolean) => {
+    // 文本：间奏行不修改文本
+    if (!isInterlude) {
+      const text = editTextRef.current?.value ?? '';
+      if (text.trim()) {
+        updateLyricLine(lineId, { text: text.trim() });
+      }
     }
-    setEditingId(null);
-    setEditingText('');
+
+    // 时间戳
+    const timeStr = editTimeRef.current?.value ?? '';
+    if (timeStr.trim()) {
+      const timeInSeconds = parseLRCTimeTag(timeStr.trim());
+      if (timeInSeconds >= 0) {
+        updateLyricLine(lineId, { time: timeInSeconds });
+      }
+    }
+
+    setEditingLineId(null);
   };
 
-  // 按键处理
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  /**
+   * 取消编辑，不保存任何修改。
+   */
+  const handleCancelEdit = () => {
+    setEditingLineId(null);
+  };
+
+  /**
+   * 文本输入框 keyDown 处理。
+   */
+  const handleTextKeyDown = (e: React.KeyboardEvent, lineId: string, isInterlude?: boolean) => {
     if (e.key === 'Enter') {
-      handleSaveEdit();
+      e.preventDefault();
+      handleSaveEdit(lineId, isInterlude);
     } else if (e.key === 'Escape') {
-      setEditingId(null);
-      setEditingText('');
+      handleCancelEdit();
     }
   };
 
-  // 过滤掉空行
-  const filteredLyrics = parsedLyrics?.filter(line => line.text.trim() !== '') || [];
+  /**
+   * 时间输入框 keyDown 处理。
+   */
+  const handleTimeKeyDown = (e: React.KeyboardEvent, lineId: string, isInterlude?: boolean) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSaveEdit(lineId, isInterlude);
+    } else if (e.key === 'Escape') {
+      handleCancelEdit();
+    }
+  };
+
+  const filteredLyrics = parsedLyrics || [];
 
   return (
     <div className="flex flex-col h-full">
@@ -288,7 +337,7 @@ export const LyricsEditor: React.FC = () => {
             <Type className="h-4 w-4" />
             {showTextInput ? '隐藏输入框' : '显示输入框'}
           </Button>
-          
+
           <Button
             variant="outline"
             size="sm"
@@ -298,7 +347,7 @@ export const LyricsEditor: React.FC = () => {
             <FileText className="h-4 w-4" />
             导入文本文件
           </Button>
-          
+
           <Button
             variant="outline"
             size="sm"
@@ -308,7 +357,7 @@ export const LyricsEditor: React.FC = () => {
             <Upload className="h-4 w-4" />
             导入LRC文件
           </Button>
-          
+
           <Button
             variant="outline"
             size="sm"
@@ -319,7 +368,7 @@ export const LyricsEditor: React.FC = () => {
             <Trash2 className="h-4 w-4" />
             清空
           </Button>
-          
+
           <Button
             variant="outline"
             size="sm"
@@ -350,9 +399,9 @@ export const LyricsEditor: React.FC = () => {
               </>
             )}
           </Button>
-          
+
           <div className="w-px bg-border mx-1" />
-          
+
           <Button
             variant="outline"
             size="sm"
@@ -361,6 +410,16 @@ export const LyricsEditor: React.FC = () => {
           >
             <Music className="h-4 w-4" />
             添加间奏
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleAddEmptyLine}
+            className="gap-1"
+          >
+            <Type className="h-4 w-4" />
+            添加空行
           </Button>
         </div>
       </div>
@@ -383,6 +442,7 @@ export const LyricsEditor: React.FC = () => {
           <Textarea
             value={textInput}
             onChange={(e) => setTextInput(e.target.value)}
+            onCompositionEnd={(e) => setTextInput(e.currentTarget.value)}
             placeholder="在此粘贴或输入歌词文本，每行一句歌词...&#10;&#10;例如：&#10;第一句歌词&#10;第二句歌词&#10;第三句歌词"
             className="min-h-[120px] font-mono"
           />
@@ -393,7 +453,7 @@ export const LyricsEditor: React.FC = () => {
       )}
 
       {/* 歌词编辑区 */}
-      <div 
+      <div
         ref={containerRef}
         className="flex-1 overflow-y-auto bg-background rounded border"
       >
@@ -403,82 +463,166 @@ export const LyricsEditor: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-0">
-            {filteredLyrics.map((line) => (
-              <div
-                key={line.id}
-                className={`border-b p-3 hover:bg-muted/50 transition-colors ${
-                  line.time === -1
-                    ? 'bg-orange-50 dark:bg-orange-950/20'
-                    : line.isInterlude
-                    ? 'bg-purple-50 dark:bg-purple-950/20'
-                    : 'bg-green-50 dark:bg-green-950/20'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  {/* 歌词文本 */}
-                  <div className="flex-1 min-w-0">
-                    {editingId === line.id ? (
-                      <div>
-                        <Input
-                          ref={editInputRef}
-                          value={editingText}
-                          onChange={(e) => setEditingText(e.target.value)}
-                          onKeyDown={handleKeyDown}
-                          onBlur={handleSaveEdit}
-                          className="text-sm"
-                          disabled={line.isInterlude}
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          按回车保存或ESC取消
-                        </p>
-                      </div>
-                    ) : (
-                      <div>
-                        <div
-                          className="text-sm font-medium cursor-pointer hover:text-primary"
-                          onDoubleClick={() => handleStartEdit(line.id!, line.text, line.isInterlude)}
-                        >
-                          {line.isInterlude ? '♪ 间奏 ♪' : line.text}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {line.isInterlude && <span className="text-purple-600">[间奏] </span>}
-                          {line.time === -1 ? '未设置时间' : formatLRCTime(line.time)}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+            {filteredLyrics.map((line) => {
+              const isEditing = editingLineId === line.id;
 
-                  {/* 操作按钮 */}
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleSetCurrentTime(line.id!)}
-                      disabled={line.isInterlude}
-                    >
-                      设为当前时间
-                    </Button>
-                    
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleJumpToTime(line.time)}
-                      disabled={line.time === -1}
-                    >
-                      跳转播放
-                    </Button>
-                    
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteLyricLine(line.id!)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+              // 行的背景色
+              const rowBg = line.time === -1
+                ? 'bg-orange-50 dark:bg-orange-950/20'
+                : line.isInterlude
+                ? 'bg-purple-50 dark:bg-purple-950/20'
+                : line.text === ''
+                ? 'bg-gray-50 dark:bg-gray-950/20'
+                : 'bg-green-50 dark:bg-green-950/20';
+
+              const selectedRing = selectedLineId === line.id
+                ? 'ring-2 ring-primary bg-primary/5 dark:bg-primary/10'
+                : '';
+
+              return (
+                <div
+                  key={line.id}
+                  className={`border-b p-3 hover:bg-muted/50 transition-colors cursor-pointer ${rowBg} ${selectedRing}`}
+                  onClick={() => {
+                    // 单击仅设置选中行，不影响 editingLineId
+                    if (!isEditing) {
+                      setSelectedLineId(line.id!);
+                    }
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    {/* 歌词内容区 */}
+                    <div className="flex-1 min-w-0">
+                      {isEditing ? (
+                        /**
+                         * 编辑模式容器：
+                         * - onClick stopPropagation 阻止冒泡到行容器（防止 setSelectedLineId 触发）
+                         * - 不使用 onMouseDown stopPropagation，避免干扰输入框原生聚焦
+                         */
+                        <div
+                          className="flex gap-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex-1 space-y-2">
+                            {/* 文本编辑框（非受控）*/}
+                            {line.isInterlude ? (
+                              <div className="text-sm text-purple-600 font-medium py-2">
+                                ♪ 间奏 ♪ (不可编辑文本)
+                              </div>
+                            ) : (
+                              <input
+                                ref={editTextRef}
+                                defaultValue={line.text}
+                                onKeyDown={(e) => handleTextKeyDown(e, line.id!, line.isInterlude)}
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                placeholder="输入歌词文本"
+                                autoComplete="off"
+                              />
+                            )}
+
+                            {/* 时间编辑框（非受控）*/}
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">时间:</span>
+                              <input
+                                ref={editTimeRef}
+                                defaultValue={line.time === -1 ? '' : formatLRCTime(line.time).slice(1, -1)}
+                                onKeyDown={(e) => handleTimeKeyDown(e, line.id!, line.isInterlude)}
+                                className="flex rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 w-32 h-8 font-mono"
+                                placeholder="mm:ss.xx"
+                                autoComplete="off"
+                              />
+                              <div className="flex gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={() => handleSaveEdit(line.id!, line.isInterlude)}
+                                >
+                                  保存
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={handleCancelEdit}
+                                >
+                                  取消
+                                </Button>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Enter保存 / ESC取消
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        /* 非编辑模式：双击进入编辑 */
+                        <div>
+                          <div
+                            className="text-sm font-medium cursor-pointer hover:text-primary min-h-[1.25rem]"
+                            onDoubleClick={(e) => handleStartEdit(line.id!, e)}
+                            title="双击编辑文本和时间"
+                          >
+                            {line.isInterlude
+                              ? '♪ 间奏 ♪'
+                              : (line.text || (
+                                <span className="text-muted-foreground italic text-xs">(空行)</span>
+                              ))
+                            }
+                          </div>
+                          <div
+                            className="text-xs text-muted-foreground mt-1 cursor-pointer hover:text-primary w-fit"
+                            onDoubleClick={(e) => handleStartEdit(line.id!, e)}
+                            title="双击编辑时间"
+                          >
+                            {line.isInterlude && (
+                              <span className="text-purple-600">[间奏] </span>
+                            )}
+                            {line.time === -1 ? '未设置时间' : formatLRCTime(line.time)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 操作按钮 */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSetCurrentTime(line.id!);
+                        }}
+                        disabled={line.isInterlude}
+                      >
+                        设为当前时间
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleJumpToTime(line.time);
+                        }}
+                        disabled={line.time === -1}
+                      >
+                        跳转播放
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteLyricLine(line.id!);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -501,16 +645,10 @@ export const LyricsEditor: React.FC = () => {
             </p>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={handleCancelOverwrite}
-            >
+            <Button variant="outline" onClick={handleCancelOverwrite}>
               取消
             </Button>
-            <Button
-              variant="default"
-              onClick={handleConfirmOverwrite}
-            >
+            <Button variant="default" onClick={handleConfirmOverwrite}>
               确认覆盖
             </Button>
           </DialogFooter>

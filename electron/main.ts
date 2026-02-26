@@ -3,6 +3,7 @@ import path from 'path';
 import axios from 'axios';
 import * as fs from 'fs';
 import { setupAudioStreamTranscoder, cleanupAllTempFiles } from './audio-stream-transcoder';
+import { registerStreamAudioScheme, registerStreamAudioProtocol, SessionManager } from './streaming';
 import logger from './logger';
 
 let mainWindow: BrowserWindow | null = null;
@@ -632,7 +633,54 @@ function registerIpcHandlers() {
       };
     }
   });
+
+  // 启动流式转码会话
+  ipcMain.handle('stream-transcode-start', async (_event, sessionId: string, sourceUrl: string, startTimeSeconds?: number) => {
+    const manager = SessionManager.getInstance();
+    const session = manager.getOrCreateSession(sessionId, sourceUrl, startTimeSeconds);
+    session.start();
+    
+    // 转发进度事件到渲染进程
+    // Bug 2 修复：progress 是对象 { percent, timemark, totalBytes, duration }
+    // 使用 progress?.percent ?? 0 确保始终发送数字，避免 percent=0 时 fallback 到整个对象
+    session.on('progress', (progress: any) => {
+      const percent = typeof progress === 'number' ? progress : (progress?.percent ?? 0);
+      mainWindow?.webContents.send(`stream-progress-${sessionId}`, percent);
+    });
+    session.on('complete', (data: any) => {
+      mainWindow?.webContents.send(`stream-complete-${sessionId}`, data.duration || 0);
+    });
+    session.on('error', (err: Error) => {
+      mainWindow?.webContents.send(`stream-error-${sessionId}`, err.message);
+    });
+    
+    return {
+      streamUrl: `stream-audio://${sessionId}`,
+      sessionId
+    };
+  });
+
+  // 销毁流式转码会话
+  ipcMain.handle('stream-transcode-destroy', async (_event, sessionId: string) => {
+    const manager = SessionManager.getInstance();
+    manager.destroySession(sessionId);
+  });
+
+  // 获取会话状态
+  ipcMain.handle('stream-transcode-status', async (_event, sessionId: string) => {
+    const manager = SessionManager.getInstance();
+    const session = manager.getSession(sessionId);
+    if (!session) return null;
+    return {
+      state: session.state,
+      bufferedBytes: session.totalBytes,
+      isComplete: session.state === 'completed'
+    };
+  });
 }
+
+// 注册流式音频自定义协议方案（必须在 app.whenReady() 之前调用）
+registerStreamAudioScheme();
 
 app.whenReady().then(() => {
   // 初始化配置路径
@@ -642,6 +690,9 @@ app.whenReady().then(() => {
   
   // 设置音频流式转码
   setupAudioStreamTranscoder();
+
+  // 注册流式音频自定义协议处理器
+  registerStreamAudioProtocol();
 
   // 注册自定义协议来提供本地文件访问
   protocol.registerFileProtocol('local-audio', (request, callback) => {
@@ -772,4 +823,6 @@ app.on('before-quit', () => {
   unregisterGlobalShortcuts();
   // 清理所有临时音频文件
   cleanupAllTempFiles();
+  // 清理所有流式转码会话
+  SessionManager.getInstance().destroyAll();
 });
