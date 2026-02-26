@@ -5,6 +5,28 @@ import { LyricLine } from '@/lib/lrc-parser';
 
 export type PlaybackMode = 'order' | 'random' | 'single';
 
+// Fisher-Yates 洗牌算法
+function fisherYatesShuffle(arr: number[]): number[] {
+  const shuffled = [...arr];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+// 生成洗牌队列，确保队列开头不是当前曲目索引
+function generateShuffleQueue(length: number, currentIndex: number): number[] {
+  if (length <= 0) return [];
+  const indices = Array.from({ length }, (_, i) => i);
+  const shuffled = fisherYatesShuffle(indices);
+  // 若队列第一个恰好是当前曲目，则将其移到末尾，避免"换歌"后还是同一首
+  if (shuffled.length > 1 && shuffled[0] === currentIndex) {
+    shuffled.push(shuffled.shift()!);
+  }
+  return shuffled;
+}
+
 interface PlayerState {
   // 播放状态
   isPlaying: boolean;
@@ -13,6 +35,10 @@ interface PlayerState {
   volume: number;
   playbackMode: PlaybackMode;
   playbackRate: number; // 播放速度
+  
+  // 随机播放队列
+  shuffleQueue: number[];   // 存储随机排列的索引列表
+  shuffleIndex: number;     // 当前在洗牌队列中的位置
   
   // 当前播放的歌曲
   currentSong: PlaylistItem | null;
@@ -68,6 +94,7 @@ interface PlayerState {
   setIsEditingLyrics: (isEditing: boolean) => void;
   updateLyricLine: (id: string, updates: Partial<LyricLine>) => void;
   addLyricLine: (time: number, text?: string) => string;
+  insertLyricLine: (index: number, time: number, text?: string) => string;
   deleteLyricLine: (id: string) => void;
   
   // 音频可视化方法
@@ -90,6 +117,8 @@ export const usePlayerStore = create<PlayerState>()(
       volume: 0.7,
       playbackMode: 'order',
       playbackRate: 1.0,
+      shuffleQueue: [],
+      shuffleIndex: -1,
       currentSong: null,
       playlists: [],
       currentPlaylist: null,
@@ -106,7 +135,22 @@ export const usePlayerStore = create<PlayerState>()(
       setCurrentTime: (currentTime) => set({ currentTime }),
       setDuration: (duration) => set({ duration }),
       setVolume: (volume) => set({ volume: Math.max(0, Math.min(1, volume)) }),
-      setPlaybackMode: (playbackMode) => set({ playbackMode }),
+      setPlaybackMode: (playbackMode) => {
+        const { currentPlaylist, playlists, currentSong } = get();
+        // 切换到随机模式时，初始化洗牌队列
+        if (playbackMode === 'random') {
+          const playlist = playlists.find(p => p.name === currentPlaylist);
+          if (playlist && playlist.items.length > 0) {
+            const currentIndex = currentSong
+              ? playlist.items.findIndex(item => item.fs_id === currentSong.fs_id)
+              : -1;
+            const shuffleQueue = generateShuffleQueue(playlist.items.length, currentIndex);
+            set({ playbackMode, shuffleQueue, shuffleIndex: -1 });
+            return;
+          }
+        }
+        set({ playbackMode });
+      },
       setPlaybackRate: (playbackRate) => set({ playbackRate }),
       
       // 歌曲控制方法
@@ -125,7 +169,7 @@ export const usePlayerStore = create<PlayerState>()(
         }
       },
       playNext: () => {
-        const { currentPlaylist, playlists, currentSong, playbackMode } = get();
+        const { currentPlaylist, playlists, currentSong, playbackMode, shuffleQueue, shuffleIndex } = get();
         
         if (!currentPlaylist || !currentSong) return;
         
@@ -135,18 +179,34 @@ export const usePlayerStore = create<PlayerState>()(
         const currentIndex = playlist.items.findIndex(item => item.fs_id === currentSong.fs_id);
         if (currentIndex === -1) return;
         
-        let nextIndex = currentIndex + 1;
+        let nextIndex: number;
+        let newShuffleIndex = shuffleIndex;
+        let newShuffleQueue = shuffleQueue;
         
-        // 随机播放模式
+        // 随机播放模式：使用洗牌队列按顺序取下一首
         if (playbackMode === 'random') {
-          nextIndex = Math.floor(Math.random() * playlist.items.length);
+          // 确保洗牌队列有效
+          if (newShuffleQueue.length !== playlist.items.length) {
+            newShuffleQueue = generateShuffleQueue(playlist.items.length, currentIndex);
+            newShuffleIndex = -1;
+          }
+          const nextShuffleIndex = newShuffleIndex + 1;
+          if (nextShuffleIndex >= newShuffleQueue.length) {
+            // 队列播放完毕，重新生成洗牌队列
+            newShuffleQueue = generateShuffleQueue(playlist.items.length, currentIndex);
+            newShuffleIndex = 0;
+          } else {
+            newShuffleIndex = nextShuffleIndex;
+          }
+          nextIndex = newShuffleQueue[newShuffleIndex];
         }
         // 单曲循环模式保持当前索引不变
         else if (playbackMode === 'single') {
           nextIndex = currentIndex;
         }
         // 顺序播放模式，如果到末尾则回到开头
-        else if (playbackMode === 'order') {
+        else {
+          nextIndex = currentIndex + 1;
           if (nextIndex >= playlist.items.length) {
             nextIndex = 0;
           }
@@ -158,7 +218,9 @@ export const usePlayerStore = create<PlayerState>()(
             currentSong: nextSong,
             isPlaying: true,
             parsedLyrics: null,
-            lyrics: null
+            lyrics: null,
+            shuffleQueue: newShuffleQueue,
+            shuffleIndex: newShuffleIndex
           });
           // 添加到最近播放
           get().addRecentSong(nextSong);
@@ -169,7 +231,7 @@ export const usePlayerStore = create<PlayerState>()(
         }
       },
       playPrevious: () => {
-        const { currentPlaylist, playlists, currentSong, playbackMode } = get();
+        const { currentPlaylist, playlists, currentSong, playbackMode, shuffleQueue, shuffleIndex } = get();
         
         if (!currentPlaylist || !currentSong) return;
         
@@ -179,18 +241,33 @@ export const usePlayerStore = create<PlayerState>()(
         const currentIndex = playlist.items.findIndex(item => item.fs_id === currentSong.fs_id);
         if (currentIndex === -1) return;
         
-        let prevIndex = currentIndex - 1;
+        let prevIndex: number;
+        let newShuffleIndex = shuffleIndex;
+        let newShuffleQueue = shuffleQueue;
         
-        // 随机播放模式
+        // 随机播放模式：使用洗牌队列按顺序取上一首
         if (playbackMode === 'random') {
-          prevIndex = Math.floor(Math.random() * playlist.items.length);
+          // 确保洗牌队列有效
+          if (newShuffleQueue.length !== playlist.items.length) {
+            newShuffleQueue = generateShuffleQueue(playlist.items.length, currentIndex);
+            newShuffleIndex = 0;
+          }
+          const prevShuffleIndex = newShuffleIndex - 1;
+          if (prevShuffleIndex < 0) {
+            // 已在队列开头，保持在第一个
+            newShuffleIndex = 0;
+          } else {
+            newShuffleIndex = prevShuffleIndex;
+          }
+          prevIndex = newShuffleQueue[newShuffleIndex];
         }
         // 单曲循环模式保持当前索引不变
         else if (playbackMode === 'single') {
           prevIndex = currentIndex;
         }
         // 顺序播放模式，如果到开头则回到末尾
-        else if (playbackMode === 'order') {
+        else {
+          prevIndex = currentIndex - 1;
           if (prevIndex < 0) {
             prevIndex = playlist.items.length - 1;
           }
@@ -202,7 +279,9 @@ export const usePlayerStore = create<PlayerState>()(
             currentSong: prevSong,
             isPlaying: true,
             parsedLyrics: null,
-            lyrics: null
+            lyrics: null,
+            shuffleQueue: newShuffleQueue,
+            shuffleIndex: newShuffleIndex
           });
           // 添加到最近播放
           get().addRecentSong(prevSong);
@@ -220,6 +299,10 @@ export const usePlayerStore = create<PlayerState>()(
       createPlaylist: (name, items) => set((state) => {
         // 检查是否存在同名列表
         const exists = state.playlists.some(p => p.name === name);
+        // 播放列表内容变化时重置洗牌队列
+        const shuffleReset = state.playbackMode === 'random' && state.currentPlaylist === name
+          ? { shuffleQueue: generateShuffleQueue(items.length, -1), shuffleIndex: -1 }
+          : {};
         if (exists) {
           // 如果存在，更新项目
           return {
@@ -228,7 +311,8 @@ export const usePlayerStore = create<PlayerState>()(
                 ? { ...p, items, update_time: Math.floor(Date.now() / 1000) }
                 : p
             ),
-            currentPlaylist: name
+            currentPlaylist: name,
+            ...shuffleReset
           };
         } else {
           // 如果不存在，创建新列表
@@ -248,9 +332,16 @@ export const usePlayerStore = create<PlayerState>()(
       removePlaylist: (name) => set((state) => ({
         playlists: state.playlists.filter(p => p.name !== name)
       })),
-      updatePlaylist: (playlist) => set((state) => ({
-        playlists: state.playlists.map(p => p.name === playlist.name ? playlist : p)
-      })),
+      updatePlaylist: (playlist) => set((state) => {
+        // 播放列表内容变化时重置洗牌队列
+        const shuffleReset = state.playbackMode === 'random' && state.currentPlaylist === playlist.name
+          ? { shuffleQueue: generateShuffleQueue(playlist.items.length, -1), shuffleIndex: -1 }
+          : {};
+        return {
+          playlists: state.playlists.map(p => p.name === playlist.name ? playlist : p),
+          ...shuffleReset
+        };
+      }),
       setCurrentPlaylist: (name) => set({ currentPlaylist: name }),
       updatePlaylistItemDuration: (fs_id, duration) => set((state) => ({
         playlists: state.playlists.map(playlist => ({
@@ -375,6 +466,30 @@ export const usePlayerStore = create<PlayerState>()(
               ...currentLyrics.slice(insertIndex)
             ];
           }
+          
+          return {
+            parsedLyrics: updatedLyrics
+          };
+        });
+        return id;
+      },
+      
+      // 在指定位置插入歌词行
+      insertLyricLine: (index, time, text = '') => {
+        const id = Date.now().toString(36) + Math.random().toString(36).substr(2);
+        set((state) => {
+          const newLine = { id, time, text, isInterlude: false };
+          const currentLyrics = state.parsedLyrics || [];
+          
+          // 确保索引在有效范围内
+          const safeIndex = Math.max(0, Math.min(index, currentLyrics.length));
+          
+          // 在指定位置插入
+          const updatedLyrics = [
+            ...currentLyrics.slice(0, safeIndex),
+            newLine,
+            ...currentLyrics.slice(safeIndex)
+          ];
           
           return {
             parsedLyrics: updatedLyrics
