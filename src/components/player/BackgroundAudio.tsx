@@ -41,6 +41,9 @@ export const BackgroundAudio = () => {
   
   // 流式转码的基准时间（用于 Seek 后正确计算绝对时间）
   const baseTimeRef = useRef<number>(0);
+  
+  // 标记是否正在缓冲（网络等待），避免将缓冲暂停误判为用户暂停
+  const isBufferingRef = useRef<boolean>(false);
 
   // 降级到旧的临时文件转码方式
   const fallbackToLegacyTranscode = async (url: string, fileId: string) => {
@@ -241,7 +244,13 @@ export const BackgroundAudio = () => {
           
           if (audioRef.current) {
             audioRef.current.src = link;
-            // HTML5 的 play 会在 onCanPlay 中触发
+            audioRef.current.load();
+            // 主动发起播放，不依赖 onCanPlay（onCanPlay 可能在缓冲中途触发多次）
+            if (isPlaying) {
+              audioRef.current.play().catch(e => {
+                if (e.name !== 'AbortError') console.error("HTML5 直接播放失败:", e);
+              });
+            }
           }
         }
       } catch (error) {
@@ -369,7 +378,9 @@ export const BackgroundAudio = () => {
       
       audioRef.current.volume = volume;
       audioRef.current.playbackRate = playbackRate; // 保持播放速率
-      if (isPlaying) {
+      // 仅在音频当前处于暂停且 Store 认为应该播放时触发 play()
+      // 避免在已播放的状态下重复调用 play() 导致打断
+      if (isPlaying && audioRef.current.paused) {
         audioRef.current.play().catch(e => {
           if (e.name !== 'AbortError') console.error("HTML5 Play error", e);
         });
@@ -573,11 +584,39 @@ export const BackgroundAudio = () => {
 
   const handlePause = () => {
     if ((activePlayer === 'html5' || activePlayer === 'transcoded') && audioRef.current && !audioRef.current.ended) {
-      // 如果系统自动暂停（如拔出耳机），且我们状态是播放中，则同步状态
+      // 如果正在缓冲，pause 事件是由网络等待触发的，不是用户/系统操作，不应同步到 Store
+      if (isBufferingRef.current) {
+        console.log("检测到缓冲暂停（网络等待），忽略此次 pause 事件");
+        return;
+      }
+      // 如果正在 Seek，也忽略 pause 事件（Seek 操作会先触发 pause 再恢复播放）
+      if (isSeekingRef.current) {
+        console.log("检测到 Seek 中的暂停，忽略此次 pause 事件");
+        return;
+      }
+      // 如果系统真正外部暂停（如拔出耳机），且我们状态是播放中，则同步状态
       if (isPlaying) {
         console.log("检测到外部暂停（设备拔出?），更新状态");
         setIsPlaying(false);
       }
+    }
+  };
+
+  // 处理缓冲等待（网络加载中）
+  const handleWaiting = () => {
+    console.log("[播放器] 网络缓冲中（waiting）...");
+    isBufferingRef.current = true;
+  };
+
+  // 缓冲完成，可以继续播放
+  const handlePlaying = () => {
+    console.log("[播放器] 缓冲完成，恢复播放（playing）");
+    isBufferingRef.current = false;
+    // 如果 Store 认为应该在播放，但音频由于缓冲暂停了，在这里确保它恢复
+    if (isPlaying && audioRef.current && audioRef.current.paused) {
+      audioRef.current.play().catch(e => {
+        if (e.name !== 'AbortError') console.error("缓冲后恢复播放失败:", e);
+      });
     }
   };
 
@@ -639,6 +678,8 @@ export const BackgroundAudio = () => {
       ref={audioRef}
       preload="auto"
       crossOrigin="anonymous"
+      onWaiting={handleWaiting}
+      onPlaying={handlePlaying}
       onLoadedMetadata={(e: React.SyntheticEvent<HTMLAudioElement>) => {
         const d = e.currentTarget.duration;
         console.log(`[BackgroundAudio] onLoadedMetadata: audio element duration=${d}, isFinite=${isFinite(d)}, activePlayer=${activePlayer}, durationRef.current=${durationRef.current}`);
