@@ -45,6 +45,13 @@ export const BackgroundAudio = () => {
   // 标记是否正在缓冲（网络等待），避免将缓冲暂停误判为用户暂停
   const isBufferingRef = useRef<boolean>(false);
 
+  // 用 ref 持有最新的 isPlaying 和 currentSong，供 seek useEffect 使用
+  // 避免将它们加入依赖数组，防止 isPlaying 变化时误触发 seek
+  const isPlayingRef = useRef<boolean>(isPlaying);
+  const currentSongRef = useRef(currentSong);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { currentSongRef.current = currentSong; }, [currentSong]);
+
   // 降级到旧的临时文件转码方式
   const fallbackToLegacyTranscode = async (url: string, fileId: string) => {
     console.warn('[播放器] 降级到旧的临时文件转码方式');
@@ -301,6 +308,8 @@ export const BackgroundAudio = () => {
   }, [playbackRate]);
 
   // 监听进度拖拽/跳转 (Store -> Player)
+  // 注意：依赖数组只包含 currentTime 和 activePlayer
+  // isPlaying 和 currentSong 通过 ref 访问，避免它们变化时误触发 seek
   useEffect(() => {
     // 只有当 store 中的时间与内部记录的时间差异较大时，才认为是用户拖拽或跳转
     if (Math.abs(currentTime - lastCurrentTimeRef.current) > 1.0) {
@@ -312,13 +321,17 @@ export const BackgroundAudio = () => {
       const handleSeek = async () => {
         if (!audioRef.current) return;
         
+        // 通过 ref 读取最新值，不依赖闭包捕获（避免将它们加入依赖数组）
+        const currentIsPlaying = isPlayingRef.current;
+        const currentSongSnap = currentSongRef.current;
+        
         // 如果是流式转码模式，需要特殊处理 Seek
-        if (activePlayer === 'transcoded' && currentSong) {
+        if (activePlayer === 'transcoded' && currentSongSnap) {
           console.log(`[播放器] 流式转码 Seek 到: ${currentTime}`);
           
           try {
-            const sessionId = currentSong.fs_id.toString();
-            const link = await baiduAPI.getDownloadLink(currentSong.fs_id);
+            const sessionId = currentSongSnap.fs_id.toString();
+            const link = await baiduAPI.getDownloadLink(currentSongSnap.fs_id);
             
             if (link) {
               // 更新基准时间为目标时间
@@ -343,7 +356,7 @@ export const BackgroundAudio = () => {
                 }
                 
                 // 恢复播放
-                if (isPlaying) {
+                if (currentIsPlaying) {
                   audioRef.current.play().catch(err => console.error('Seek play failed:', err));
                 }
               }
@@ -368,7 +381,7 @@ export const BackgroundAudio = () => {
       
       lastCurrentTimeRef.current = currentTime;
     }
-  }, [currentTime, activePlayer, currentSong, isPlaying]);
+  }, [currentTime, activePlayer]);
 
   // HTML5 事件处理
   const handleCanPlay = () => {
