@@ -44,13 +44,18 @@ export const BackgroundAudio = () => {
   
   // 标记是否正在缓冲（网络等待），避免将缓冲暂停误判为用户暂停
   const isBufferingRef = useRef<boolean>(false);
+  
+  // 标记 loadSong 正在执行中，此时 isPlaying effect 不应操作 audio，避免竞态
+  const isLoadingRef = useRef<boolean>(false);
 
-  // 用 ref 持有最新的 isPlaying 和 currentSong，供 seek useEffect 使用
-  // 避免将它们加入依赖数组，防止 isPlaying 变化时误触发 seek
+  // 用 ref 持有最新的 isPlaying、currentSong、activePlayer，供各 effect 使用
+  // 避免将它们加入依赖数组，防止状态变化时误触发 seek 或其他副作用
   const isPlayingRef = useRef<boolean>(isPlaying);
   const currentSongRef = useRef(currentSong);
+  const activePlayerRef = useRef<'html5' | 'transcoded'>('html5');
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { currentSongRef.current = currentSong; }, [currentSong]);
+  useEffect(() => { activePlayerRef.current = activePlayer; }, [activePlayer]);
 
   // 降级到旧的临时文件转码方式
   const fallbackToLegacyTranscode = async (url: string, fileId: string) => {
@@ -133,6 +138,9 @@ export const BackgroundAudio = () => {
     if (!currentSong) return;
 
     const loadSong = async () => {
+      // 标记正在加载，阻止 isPlaying effect 在加载过程中操作 audio
+      isLoadingRef.current = true;
+      
       // 重置状态
       lastCurrentTimeRef.current = 0;
       baseTimeRef.current = 0; // 重置基准时间
@@ -250,10 +258,13 @@ export const BackgroundAudio = () => {
           cleanupAllTranscodeResources();
           
           if (audioRef.current) {
+            // 先停止当前播放，避免旧 src 继续播放
+            audioRef.current.pause();
             audioRef.current.src = link;
             audioRef.current.load();
-            // 主动发起播放，不依赖 onCanPlay（onCanPlay 可能在缓冲中途触发多次）
-            if (isPlaying) {
+            // 加载完成后，由 loadSong 自己发起播放，不依赖 isPlaying effect
+            // 使用 isPlayingRef 读取最新值，避免闭包捕获过时的 isPlaying
+            if (isPlayingRef.current) {
               audioRef.current.play().catch(e => {
                 if (e.name !== 'AbortError') console.error("HTML5 直接播放失败:", e);
               });
@@ -263,6 +274,9 @@ export const BackgroundAudio = () => {
       } catch (error) {
         console.error('加载歌曲流程出错:', error);
         setTimeout(playNext, 3000);
+      } finally {
+        // 无论成功还是失败，加载完成后清除标志
+        isLoadingRef.current = false;
       }
     };
 
@@ -276,26 +290,35 @@ export const BackgroundAudio = () => {
   }, [currentSong?.fs_id]);
 
   // 监听播放/暂停状态变化
+  // 注意：只依赖 isPlaying，activePlayer 通过 ref 读取
+  // loadSong 执行期间（isLoadingRef=true），此 effect 不应操作 audio，避免竞态：
+  //   - loadSong 负责设置 src、load()、play()
+  //   - 如果此 effect 在 loadSong 完成前触发，会对旧 src 发起 play()，被后续 load() abort
   useEffect(() => {
     const handlePlayState = async () => {
-      if (activePlayer === 'html5' || activePlayer === 'transcoded') {
-        if (audioRef.current) {
-          if (isPlaying) {
-            // 恢复音频上下文（如果是挂起状态）
-            audioContextService.resume();
-            
-            // 捕获播放错误，避免未加载完成时报错
+      // 如果正在加载新歌，跳过——loadSong 自己负责播放
+      if (isLoadingRef.current) {
+        console.log('[播放器] loadSong 进行中，跳过 isPlaying effect 的 play/pause 操作');
+        return;
+      }
+      if (audioRef.current) {
+        if (isPlaying) {
+          // 恢复音频上下文（如果是挂起状态）
+          audioContextService.resume();
+          
+          // 只有 src 已经设置（不为空）才播放，避免加载过程中调用 play()
+          if (audioRef.current.src && audioRef.current.src !== window.location.href) {
             await audioRef.current.play().catch(e => {
               if (e.name !== 'AbortError') console.error("HTML5 播放失败:", e);
             });
-          } else {
-            audioRef.current.pause();
           }
+        } else {
+          audioRef.current.pause();
         }
       }
     };
     handlePlayState();
-  }, [isPlaying, activePlayer]);
+  }, [isPlaying]);
 
   // 监听音量变化
   useEffect(() => {
@@ -308,8 +331,8 @@ export const BackgroundAudio = () => {
   }, [playbackRate]);
 
   // 监听进度拖拽/跳转 (Store -> Player)
-  // 注意：依赖数组只包含 currentTime 和 activePlayer
-  // isPlaying 和 currentSong 通过 ref 访问，避免它们变化时误触发 seek
+  // 注意：依赖数组只包含 currentTime
+  // activePlayer、isPlaying、currentSong 全部通过 ref 读取，避免它们变化时误触发 seek
   useEffect(() => {
     // 只有当 store 中的时间与内部记录的时间差异较大时，才认为是用户拖拽或跳转
     if (Math.abs(currentTime - lastCurrentTimeRef.current) > 1.0) {
@@ -324,9 +347,10 @@ export const BackgroundAudio = () => {
         // 通过 ref 读取最新值，不依赖闭包捕获（避免将它们加入依赖数组）
         const currentIsPlaying = isPlayingRef.current;
         const currentSongSnap = currentSongRef.current;
+        const currentActivePlayer = activePlayerRef.current;
         
         // 如果是流式转码模式，需要特殊处理 Seek
-        if (activePlayer === 'transcoded' && currentSongSnap) {
+        if (currentActivePlayer === 'transcoded' && currentSongSnap) {
           console.log(`[播放器] 流式转码 Seek 到: ${currentTime}`);
           
           try {
@@ -341,18 +365,12 @@ export const BackgroundAudio = () => {
               const result = await window.electronAPI.streamTranscodeStart(sessionId, link, currentTime);
               
               if (audioRef.current) {
-                // 更新 src 会重置 currentTime 为 0
-                // 新流是从 seek 时间点开始的，所以 audio.currentTime = 0 对应绝对时间 = baseTimeRef.current
                 audioRef.current.src = result.streamUrl;
                 audioRef.current.load();
 
                 // 立即恢复 duration（防止显示 Infinity）
-                console.log(`[BackgroundAudio] Seek triggered, durationRef.current before restore: ${durationRef.current}`);
                 if (durationRef.current > 0) {
                   setDuration(durationRef.current);
-                  console.log(`[BackgroundAudio] Restored duration after seek: ${durationRef.current}`);
-                } else {
-                  console.warn(`[BackgroundAudio] Seek: durationRef.current is zero or invalid, cannot restore duration`);
                 }
                 
                 // 恢复播放
@@ -364,7 +382,7 @@ export const BackgroundAudio = () => {
           } catch (err) {
             console.error('[播放器] 流式转码 Seek 失败:', err);
           }
-        } else if (activePlayer === 'html5') {
+        } else if (currentActivePlayer === 'html5') {
           // 普通 HTML5 播放器 Seek
           if (audioRef.current.readyState > 0) {
             audioRef.current.currentTime = currentTime;
@@ -381,7 +399,7 @@ export const BackgroundAudio = () => {
       
       lastCurrentTimeRef.current = currentTime;
     }
-  }, [currentTime, activePlayer]);
+  }, [currentTime]);
 
   // HTML5 事件处理
   const handleCanPlay = () => {
@@ -597,6 +615,11 @@ export const BackgroundAudio = () => {
 
   const handlePause = () => {
     if ((activePlayer === 'html5' || activePlayer === 'transcoded') && audioRef.current && !audioRef.current.ended) {
+      // 如果正在加载新歌，pause 是 loadSong 的 pause() 调用，不是外部暂停
+      if (isLoadingRef.current) {
+        console.log("检测到加载中的暂停（loadSong 操作），忽略此次 pause 事件");
+        return;
+      }
       // 如果正在缓冲，pause 事件是由网络等待触发的，不是用户/系统操作，不应同步到 Store
       if (isBufferingRef.current) {
         console.log("检测到缓冲暂停（网络等待），忽略此次 pause 事件");
@@ -634,10 +657,12 @@ export const BackgroundAudio = () => {
   };
 
   // 监听音频输出设备变化
+  // 注意：使用 isPlayingRef 避免将 isPlaying 加入依赖数组
+  // isPlaying 变化不应导致重新注册 devicechange 监听器
   useEffect(() => {
     const handleDeviceChange = () => {
       console.log('音频设备发生变化');
-      if (isPlaying) {
+      if (isPlayingRef.current) {
         setIsPlaying(false);
         if (audioRef.current) audioRef.current.pause();
       }
@@ -649,7 +674,8 @@ export const BackgroundAudio = () => {
         navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
       };
     }
-  }, [isPlaying, setIsPlaying]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 自动加载歌词
   useEffect(() => {
