@@ -853,6 +853,17 @@ function registerIpcHandlers() {
       logger.log(`[CUE] 上传并发数: ${concurrency}，共${outputFiles.length}个文件`);
 
       let completedCount = 0;
+      const activeUploads = new Set<string>(); // 正在上传的文件名集合
+
+      // 发送上传进度（包含所有正在上传的文件名列表）
+      const sendUploadProgress = (extra?: string) => {
+        const activeList = Array.from(activeUploads);
+        const message = extra
+          ? extra
+          : `已完成 ${completedCount}/${outputFiles.length}` +
+            (activeList.length > 0 ? `，正在上传: ${activeList.join(', ')}` : '');
+        sendProgress('upload', 72 + Math.floor((completedCount / outputFiles.length) * 26), message);
+      };
 
       // 并发上传单个文件的任务函数
       const uploadTask = async (index: number) => {
@@ -860,7 +871,8 @@ function registerIpcHandlers() {
         const filename = path.basename(localFile);
         const targetPath = `${targetDir}/${filename}`;
 
-        sendProgress('upload', 72 + Math.floor((completedCount / outputFiles.length) * 26), `上传: ${filename}`);
+        activeUploads.add(filename);
+        sendUploadProgress();
 
         // 检查文件是否已存在
         const existsResult = await checkFileExists(targetPath, accessToken);
@@ -870,9 +882,9 @@ function registerIpcHandlers() {
           const userChoice = await askUserOverwrite(event, taskId, filename);
           if (userChoice === 'skip') {
             uploadResults[index] = { filename, success: true, skipped: true };
+            activeUploads.delete(filename);
             completedCount++;
-            sendProgress('upload', 72 + Math.floor((completedCount / outputFiles.length) * 26),
-              `已完成 ${completedCount}/${outputFiles.length}`);
+            sendUploadProgress();
             return;
           }
           // overwrite 则继续上传（rtype=3 覆盖）
@@ -880,9 +892,9 @@ function registerIpcHandlers() {
 
         const uploadResult = await uploadFileToCloud(localFile, targetPath, accessToken);
         uploadResults[index] = { filename, success: uploadResult.success, error: uploadResult.error };
+        activeUploads.delete(filename);
         completedCount++;
-        sendProgress('upload', 72 + Math.floor((completedCount / outputFiles.length) * 26),
-          `已完成 ${completedCount}/${outputFiles.length}`);
+        sendUploadProgress();
       };
 
       // 使用并发池执行上传任务

@@ -198,11 +198,44 @@ export const CueSplitDialog: React.FC<CueSplitDialogProps> = ({
         {stage === 'splitting' && (
           <div className="space-y-4">
             <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">{progress.message}</span>
-                <span className="font-medium">{progress.percent}%</span>
-              </div>
-              <Progress value={progress.percent} className="h-2" />
+              {(() => {
+                // 解析进度消息：将"正在上传: file1, file2"部分拆分为单独的文件列表
+                const uploadMatch = progress.message.match(/^(.*?)，正在上传: (.+)$/);
+                if (uploadMatch) {
+                  const summary = uploadMatch[1];
+                  const files = uploadMatch[2].split(', ');
+                  return (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">{summary}</span>
+                        <span className="font-medium">{progress.percent}%</span>
+                      </div>
+                      <Progress value={progress.percent} className="h-2" />
+                      <div className="mt-2 space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground">正在上传：</p>
+                        {files.map((f, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+                          >
+                            <span className="shrink-0 animate-pulse">⬆</span>
+                            <span className="truncate">{f}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  );
+                }
+                return (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">{progress.message}</span>
+                      <span className="font-medium">{progress.percent}%</span>
+                    </div>
+                    <Progress value={progress.percent} className="h-2" />
+                  </>
+                );
+              })()}
             </div>
             <p className="text-xs text-muted-foreground text-center">
               请勿关闭窗口，分轨可能需要几分钟...
