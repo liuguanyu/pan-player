@@ -842,17 +842,25 @@ function registerIpcHandlers() {
       }
       sendProgress('split', 72, `分轨完成，共${outputFiles.length}个文件`);
 
-      // ---- Step 4: 上传到百度网盘 ----
+      // ---- Step 4: 并行上传到百度网盘 ----
       // 目标目录与原音频文件相同
       const targetDir = audioPath.substring(0, audioPath.lastIndexOf('/'));
-      const uploadResults: { filename: string; success: boolean; skipped?: boolean; error?: string }[] = [];
+      const uploadResults: { filename: string; success: boolean; skipped?: boolean; error?: string }[] =
+        new Array(outputFiles.length);
 
-      for (let i = 0; i < outputFiles.length; i++) {
-        const localFile = outputFiles[i];
+      // 并发数：min(floor(n/3), 5)，至少为1
+      const concurrency = Math.max(1, Math.min(Math.floor(outputFiles.length / 3), 5));
+      logger.log(`[CUE] 上传并发数: ${concurrency}，共${outputFiles.length}个文件`);
+
+      let completedCount = 0;
+
+      // 并发上传单个文件的任务函数
+      const uploadTask = async (index: number) => {
+        const localFile = outputFiles[index];
         const filename = path.basename(localFile);
         const targetPath = `${targetDir}/${filename}`;
 
-        sendProgress('upload', 72 + Math.floor(((i) / outputFiles.length) * 26), `上传: ${filename}`);
+        sendProgress('upload', 72 + Math.floor((completedCount / outputFiles.length) * 26), `上传: ${filename}`);
 
         // 检查文件是否已存在
         const existsResult = await checkFileExists(targetPath, accessToken);
@@ -861,15 +869,38 @@ function registerIpcHandlers() {
           // 发送询问事件，等待用户响应
           const userChoice = await askUserOverwrite(event, taskId, filename);
           if (userChoice === 'skip') {
-            uploadResults.push({ filename, success: true, skipped: true });
-            continue;
+            uploadResults[index] = { filename, success: true, skipped: true };
+            completedCount++;
+            sendProgress('upload', 72 + Math.floor((completedCount / outputFiles.length) * 26),
+              `已完成 ${completedCount}/${outputFiles.length}`);
+            return;
           }
           // overwrite 则继续上传（rtype=3 覆盖）
         }
 
         const uploadResult = await uploadFileToCloud(localFile, targetPath, accessToken);
-        uploadResults.push({ filename, success: uploadResult.success, error: uploadResult.error });
-      }
+        uploadResults[index] = { filename, success: uploadResult.success, error: uploadResult.error };
+        completedCount++;
+        sendProgress('upload', 72 + Math.floor((completedCount / outputFiles.length) * 26),
+          `已完成 ${completedCount}/${outputFiles.length}`);
+      };
+
+      // 使用并发池执行上传任务
+      const uploadQueue = [...Array(outputFiles.length).keys()]; // [0, 1, 2, ..., n-1]
+      const runPool = async () => {
+        const executing: Promise<void>[] = [];
+        for (const idx of uploadQueue) {
+          const p = uploadTask(idx).then(() => {
+            executing.splice(executing.indexOf(p), 1);
+          });
+          executing.push(p);
+          if (executing.length >= concurrency) {
+            await Promise.race(executing);
+          }
+        }
+        await Promise.all(executing);
+      };
+      await runPool();
 
       sendProgress('upload', 98, '上传完成，清理临时文件...');
 
