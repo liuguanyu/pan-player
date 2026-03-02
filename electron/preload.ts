@@ -138,4 +138,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(channel, handler);
     return () => ipcRenderer.removeListener(channel, handler);
   },
+
+  // ===== CUE 分轨 API =====
+
+  // 检查百度网盘同目录是否有同名CUE文件
+  cueCheck: (filePath: string, accessToken: string) =>
+    ipcRenderer.invoke('cue-check', filePath, accessToken),
+
+  // 执行CUE分轨（下载→分割→上传）
+  cueSplit: (params: {
+    audioPath: string;
+    audioFsId: number;
+    cuePath: string;
+    cueFsId: number;
+    accessToken: string;
+    outputFormat: 'flac' | 'wav' | 'm4a';
+    taskId: string;
+  }) => ipcRenderer.invoke('cue-split', params),
+
+  // 监听分轨进度
+  onCueSplitProgress: (taskId: string, callback: (progress: {
+    stage: string;
+    percent: number;
+    message: string;
+  }) => void) => {
+    const channel = `cue-split-progress-${taskId}`;
+    const handler = (_event: any, progress: any) => callback(progress);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+
+  // 监听"文件已存在，是否覆盖"询问
+  onCueSplitFileExists: (callback: (data: { taskId: string; filename: string }) => void) => {
+    const handler = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('cue-split-file-exists', handler);
+    return () => ipcRenderer.removeListener('cue-split-file-exists', handler);
+  },
+
+  // 回复"文件已存在"的用户选择（overwrite 或 skip）
+  cueSplitOverwriteChoice: (taskId: string, filename: string, choice: 'overwrite' | 'skip') =>
+    ipcRenderer.send('cue-split-overwrite-choice', taskId, filename, choice),
 });

@@ -59,6 +59,40 @@ export interface ElectronAPI {
   onStreamProgress: (sessionId: string, callback: (progress: number) => void) => () => void;
   onStreamComplete: (sessionId: string, callback: (duration: number) => void) => () => void;
   onStreamError: (sessionId: string, callback: (error: string) => void) => () => void;
+
+  // CUE 分轨 API
+  cueCheck: (filePath: string, accessToken: string) => Promise<{
+    hasCue: boolean;
+    cuePath?: string;
+    cueFs_id?: number;
+    error?: string;
+  }>;
+
+  cueSplit: (params: {
+    audioPath: string;
+    audioFsId: number;
+    cuePath: string;
+    cueFsId: number;
+    accessToken: string;
+    outputFormat: 'flac' | 'wav' | 'm4a';
+    taskId: string;
+  }) => Promise<{
+    success: boolean;
+    tracks?: string[];
+    uploadResults?: { filename: string; success: boolean; skipped?: boolean; error?: string }[];
+    error?: string;
+  }>;
+
+  onCueSplitProgress: (
+    taskId: string,
+    callback: (progress: { stage: string; percent: number; message: string }) => void
+  ) => () => void;
+
+  onCueSplitFileExists: (
+    callback: (data: { taskId: string; filename: string }) => void
+  ) => () => void;
+
+  cueSplitOverwriteChoice: (taskId: string, filename: string, choice: 'overwrite' | 'skip') => void;
 }
 
 declare global {

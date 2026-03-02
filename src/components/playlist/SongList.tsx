@@ -3,9 +3,26 @@ import { usePlayerStore } from '@/store/playerStore';
 import { PlaylistItem } from '@/types/file';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Trash2, Search, X, Download, RefreshCw } from 'lucide-react';
+import { Trash2, Search, X, Download, RefreshCw, Scissors } from 'lucide-react';
 import { playlistService } from '@/services/playlist.service';
 import { baiduAPI } from '@/services/baidu-api.service';
+import { baiduAuth } from '@/services/auth.service';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import { CueSplitDialog } from './CueSplitDialog';
+
+// 无损音频格式
+const LOSSLESS_FORMATS = ['.wav', '.flac', '.ape', '.wv', '.tak', '.tta', '.aiff', '.aif'];
+
+function isLosslessFormat(filename: string): boolean {
+  const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
+  return LOSSLESS_FORMATS.includes(ext);
+}
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B';
@@ -35,6 +52,7 @@ interface SongRowProps {
   onDoubleClick: (song: PlaylistItem) => void;
   onRemove: (e: React.MouseEvent, song: PlaylistItem) => void;
   onDownload: (e: React.MouseEvent, song: PlaylistItem) => void;
+  onCueSplit: (song: PlaylistItem) => void;
   rowRef?: ((el: HTMLTableRowElement | null) => void) | React.RefObject<HTMLTableRowElement>;
 }
 
@@ -48,60 +66,90 @@ const SongRow = memo(({
   onDoubleClick,
   onRemove,
   onDownload,
+  onCueSplit,
   rowRef
 }: SongRowProps) => {
+  const isLossless = isLosslessFormat(song.server_filename);
+
   return (
-    <tr
-      ref={rowRef}
-      key={song.fs_id}
-      className={`group border-b hover:bg-accent/50 cursor-pointer transition-colors ${
-        isPlaying ? 'bg-accent' : ''
-      } ${isCurrentSearchResult ? 'bg-yellow-200/50 dark:bg-yellow-900/30' : ''} ${
-        isSearchResult && !isCurrentSearchResult ? 'bg-yellow-100/30 dark:bg-yellow-900/10' : ''
-      }`}
-      onDoubleClick={() => onDoubleClick(song)}
-    >
-      <td className="py-2 px-2 text-center text-sm text-muted-foreground w-12">
-        {isPlaying ? '▶' : index + 1}
-      </td>
-      <td className="py-2 px-2 overflow-hidden">
-        <div className="truncate font-medium" title={song.server_filename}>{song.server_filename}</div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="truncate flex-1" title={song.path}>{song.path}</span>
-          <span className="shrink-0 text-right min-w-[80px]">
-            {new Date(song.server_mtime * 1000).toLocaleDateString()}
-          </span>
-        </div>
-      </td>
-      <td className="py-2 px-2 text-center text-sm text-muted-foreground w-16">
-        {formatDuration(song.duration)}
-      </td>
-      <td className="py-2 px-2 text-right text-sm text-muted-foreground w-20">
-        {formatFileSize(song.size)}
-      </td>
-      <td className="py-2 px-2 text-center w-16">
-        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
-            onClick={(e) => onDownload(e, song)}
-            title="下载到本地"
-          >
-            <Download className="h-4 w-4 text-muted-foreground hover:text-primary" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
-            onClick={(e) => onRemove(e, song)}
-            title="从列表移除"
-          >
-            <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-          </Button>
-        </div>
-      </td>
-    </tr>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <tr
+          ref={rowRef}
+          key={song.fs_id}
+          className={`group border-b hover:bg-accent/50 cursor-pointer transition-colors ${
+            isPlaying ? 'bg-accent' : ''
+          } ${isCurrentSearchResult ? 'bg-yellow-200/50 dark:bg-yellow-900/30' : ''} ${
+            isSearchResult && !isCurrentSearchResult ? 'bg-yellow-100/30 dark:bg-yellow-900/10' : ''
+          }`}
+          onDoubleClick={() => onDoubleClick(song)}
+        >
+          <td className="py-2 px-2 text-center text-sm text-muted-foreground w-12">
+            {isPlaying ? '▶' : index + 1}
+          </td>
+          <td className="py-2 px-2 overflow-hidden">
+            <div className="truncate font-medium" title={song.server_filename}>{song.server_filename}</div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="truncate flex-1" title={song.path}>{song.path}</span>
+              <span className="shrink-0 text-right min-w-[80px]">
+                {new Date(song.server_mtime * 1000).toLocaleDateString()}
+              </span>
+            </div>
+          </td>
+          <td className="py-2 px-2 text-center text-sm text-muted-foreground w-16">
+            {formatDuration(song.duration)}
+          </td>
+          <td className="py-2 px-2 text-right text-sm text-muted-foreground w-20">
+            {formatFileSize(song.size)}
+          </td>
+          <td className="py-2 px-2 text-center w-16">
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={(e) => onDownload(e, song)}
+                title="下载到本地"
+              >
+                <Download className="h-4 w-4 text-muted-foreground hover:text-primary" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={(e) => onRemove(e, song)}
+                title="从列表移除"
+              >
+                <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+              </Button>
+            </div>
+          </td>
+        </tr>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={() => onDoubleClick(song)}>
+          播放
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={(e) => onDownload(e as any, song)}>
+          下载到本地
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={(e) => onRemove(e as any, song)} className="text-destructive focus:text-destructive">
+          从列表移除
+        </ContextMenuItem>
+        {isLossless && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              onSelect={() => onCueSplit(song)}
+              className="gap-2"
+            >
+              <Scissors className="h-4 w-4" />
+              无损分轨
+            </ContextMenuItem>
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 });
 
@@ -122,6 +170,12 @@ export const SongList = () => {
   // 同步相关状态
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState('');
+
+  // CUE 分轨相关状态
+  const [cueSplitSong, setCueSplitSong] = useState<PlaylistItem | null>(null);
+  const [cueSplitPath, setCueSplitPath] = useState('');
+  const [cueSplitFsId, setCueSplitFsId] = useState(0);
+  const [cueChecking, setCueChecking] = useState<number | null>(null); // 正在检查CUE的 fs_id
 
   // 搜索相关状态
   const [searchQuery, setSearchQuery] = useState('');
@@ -288,6 +342,34 @@ export const SongList = () => {
     addRecentSong(song);
     setIsPlaying(true);
   };
+
+  // 处理 CUE 分轨右键菜单点击
+  const handleCueSplit = useCallback(async (song: PlaylistItem) => {
+    if (cueChecking === song.fs_id) return; // 防重入
+
+    const accessToken = baiduAuth.getAccessToken();
+    if (!accessToken) {
+      alert('无法获取访问令牌，请重新登录');
+      return;
+    }
+
+    setCueChecking(song.fs_id);
+    try {
+      const result = await window.electronAPI.cueCheck(song.path, accessToken);
+      if (result.hasCue && result.cuePath && result.cueFs_id !== undefined) {
+        setCueSplitSong(song);
+        setCueSplitPath(result.cuePath);
+        setCueSplitFsId(result.cueFs_id);
+      } else {
+        alert('在同目录下未找到同名的 CUE 文件，无法进行分轨。\n\n请确保 CUE 文件与无损音频文件同名且在同一目录。');
+      }
+    } catch (err: any) {
+      console.error('CUE检查失败:', err);
+      alert(`检查 CUE 文件失败: ${err.message}`);
+    } finally {
+      setCueChecking(null);
+    }
+  }, [cueChecking]);
 
   // 从列表移除歌曲
   const handleRemoveSong = (e: React.MouseEvent, song: PlaylistItem) => {
@@ -641,6 +723,7 @@ export const SongList = () => {
                 onDoubleClick={handleSongDoubleClick}
                 onRemove={handleRemoveSong}
                 onDownload={handleDownloadSong}
+                onCueSplit={handleCueSplit}
                 rowRef={(el: HTMLTableRowElement | null) => {
                   if (isPlaying && el) {
                     (currentSongRowRef as React.MutableRefObject<HTMLTableRowElement | null>).current = el;
@@ -655,6 +738,28 @@ export const SongList = () => {
         </tbody>
       </table>
       </div>
+
+      {/* CUE 分轨对话框 */}
+      {cueSplitSong && (
+        <CueSplitDialog
+          song={cueSplitSong}
+          cuePath={cueSplitPath}
+          cueFsId={cueSplitFsId}
+          onClose={() => {
+            setCueSplitSong(null);
+            setCueSplitPath('');
+            setCueSplitFsId(0);
+          }}
+        />
+      )}
+
+      {/* CUE 检查中提示 */}
+      {cueChecking !== null && (
+        <div className="fixed bottom-4 right-4 bg-background border rounded-lg shadow-lg px-4 py-2 text-sm flex items-center gap-2 z-50">
+          <RefreshCw className="h-4 w-4 animate-spin text-primary" />
+          正在检查 CUE 文件...
+        </div>
+      )}
     </div>
   );
 };

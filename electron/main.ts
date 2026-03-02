@@ -2,9 +2,19 @@ import { app, BrowserWindow, ipcMain, session, Tray, Menu, nativeImage, powerSav
 import path from 'path';
 import axios from 'axios';
 import * as fs from 'fs';
+import * as os from 'os';
 import { setupAudioStreamTranscoder, cleanupAllTempFiles } from './audio-stream-transcoder';
 import { registerStreamAudioScheme, registerStreamAudioProtocol, SessionManager } from './streaming';
 import logger from './logger';
+import iconv from 'iconv-lite';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegStatic from 'ffmpeg-static';
+import CryptoJS from 'crypto-js';
+
+// 设置 ffmpeg 路径
+if (ffmpegStatic) {
+  ffmpeg.setFfmpegPath(ffmpegStatic);
+}
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -677,6 +687,571 @@ function registerIpcHandlers() {
       isComplete: session.state === 'completed'
     };
   });
+  // ===== CUE 分轨相关 IPC Handlers =====
+
+  /**
+   * 检查百度网盘同目录是否存在同名CUE文件
+   * 参数：{ filePath: string, accessToken: string }
+   * 返回：{ hasCue: boolean, cuePath?: string }
+   */
+  ipcMain.handle('cue-check', async (_event: IpcMainInvokeEvent, filePath: string, accessToken: string) => {
+    logger.log('[CUE] 检查CUE文件:', filePath);
+    try {
+      // 获取目录和文件名（不含扩展名）
+      const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+      const filename = filePath.substring(filePath.lastIndexOf('/') + 1);
+      const basename = filename.substring(0, filename.lastIndexOf('.'));
+      const cuePath = `${dir}/${basename}.cue`;
+      const cuePathLower = `${dir}/${basename.toLowerCase()}.cue`;
+
+      // 查询目录文件列表
+      const response = await axios.get('https://pan.baidu.com/rest/2.0/xpan/file', {
+        params: {
+          method: 'list',
+          dir,
+          order: 'name',
+          limit: 1000,
+          web: 1,
+          access_token: accessToken
+        },
+        headers: { 'User-Agent': 'pan.baidu.com' }
+      });
+
+      const list: any[] = response.data?.list || [];
+      // 大小写不敏感地查找 .cue 文件
+      const cueFile = list.find(f => {
+        const name = f.server_filename || '';
+        return name.toLowerCase() === `${basename.toLowerCase()}.cue`;
+      });
+
+      if (cueFile) {
+        logger.log('[CUE] 找到CUE文件:', cueFile.path);
+        return { hasCue: true, cuePath: cueFile.path, cueFs_id: cueFile.fs_id };
+      }
+      return { hasCue: false };
+    } catch (error: any) {
+      logger.error('[CUE] 检查CUE文件失败:', error.message);
+      return { hasCue: false, error: error.message };
+    }
+  });
+
+  /**
+   * CUE 分轨主流程
+   * 参数：{ audioPath, audioFsId, cuePath, cueFsId, accessToken, outputFormat, taskId }
+   * 返回：{ success: boolean, tracks?: string[], error?: string }
+   * 通过 'cue-split-progress-${taskId}' 发送进度
+   */
+  ipcMain.handle('cue-split', async (event: IpcMainInvokeEvent, params: {
+    audioPath: string;
+    audioFsId: number;
+    cuePath: string;
+    cueFsId: number;
+    accessToken: string;
+    outputFormat: 'flac' | 'wav' | 'm4a';
+    taskId: string;
+  }) => {
+    const { audioPath, audioFsId, cuePath, cueFsId, accessToken, outputFormat, taskId } = params;
+    const sendProgress = (stage: string, percent: number, message: string) => {
+      mainWindow?.webContents.send(`cue-split-progress-${taskId}`, { stage, percent, message });
+    };
+
+    const tmpDir = path.join(os.tmpdir(), `cue-split-${taskId}`);
+    
+    try {
+      // 创建临时目录
+      fs.mkdirSync(tmpDir, { recursive: true });
+      sendProgress('init', 2, '准备临时目录...');
+
+      // ---- Step 1: 下载 CUE 文件 ----
+      sendProgress('download-cue', 5, '正在下载CUE文件...');
+      const cueDownloadLink = await getCueSplitDownloadLink(cueFsId, accessToken);
+      if (!cueDownloadLink) throw new Error('无法获取CUE文件下载链接');
+
+      const cueLocalPath = path.join(tmpDir, 'input.cue');
+      await downloadFileToPath(cueDownloadLink, cueLocalPath);
+      sendProgress('download-cue', 10, 'CUE文件下载完成');
+
+      // 读取并检测编码，转换为UTF-8
+      const cueRaw = fs.readFileSync(cueLocalPath);
+      let cueContent: string;
+      // 检测是否为 GBK 编码（简单启发：尝试 UTF-8，若有乱码则用 GBK）
+      try {
+        const utf8Attempt = cueRaw.toString('utf-8');
+        // 检测 UTF-8 BOM 或常见 GBK 标志字节
+        const hasHighBytes = cueRaw.some((b: number) => b > 0x7F);
+        if (hasHighBytes) {
+          // 尝试用 iconv 检测
+          const gbkDecoded = iconv.decode(cueRaw, 'gbk');
+          // 用 UTF-8 解码试一下
+          const utf8Decoded = iconv.decode(cueRaw, 'utf-8');
+          // 启发：GBK 解码后不应出现 \ufffd（替换字符）
+          if (!gbkDecoded.includes('\ufffd') && utf8Decoded.includes('\ufffd')) {
+            cueContent = gbkDecoded;
+            logger.log('[CUE] CUE文件编码: GBK，已转换为UTF-8');
+          } else {
+            cueContent = utf8Decoded.replace(/\ufffd/g, '');
+            logger.log('[CUE] CUE文件编码: UTF-8');
+          }
+        } else {
+          cueContent = utf8Attempt;
+        }
+      } catch {
+        cueContent = iconv.decode(cueRaw, 'gbk');
+      }
+      // 写回UTF-8版本的cue
+      fs.writeFileSync(cueLocalPath, cueContent, 'utf-8');
+
+      // ---- 解析 CUE 文件，提取曲目信息 ----
+      const tracks = parseCueFile(cueContent);
+      logger.log('[CUE] 解析到曲目数:', tracks.length);
+      if (tracks.length === 0) throw new Error('CUE文件解析失败，没有找到任何曲目');
+
+      sendProgress('parse-cue', 15, `CUE解析完成，共${tracks.length}首曲目`);
+
+      // ---- Step 2: 下载无损音频文件 ----
+      sendProgress('download-audio', 18, '正在下载无损音频文件...');
+      const audioDownloadLink = await getCueSplitDownloadLink(audioFsId, accessToken);
+      if (!audioDownloadLink) throw new Error('无法获取音频文件下载链接');
+
+      const audioExt = audioPath.substring(audioPath.lastIndexOf('.'));
+      const audioLocalPath = path.join(tmpDir, `input${audioExt}`);
+      
+      await downloadFileToPathWithProgress(audioDownloadLink, audioLocalPath, (p) => {
+        sendProgress('download-audio', 18 + Math.floor(p * 0.22), `下载音频文件... ${p}%`);
+      });
+      sendProgress('download-audio', 40, '音频文件下载完成');
+
+      // ---- Step 3: ffmpeg 分轨 ----
+      sendProgress('split', 42, '开始分轨...');
+      const outputFiles: string[] = [];
+
+      for (let i = 0; i < tracks.length; i++) {
+        const track = tracks[i];
+        const nextTrack = tracks[i + 1];
+        const safeTitle = track.title.replace(/[\\/:*?"<>|]/g, '_');
+        const trackNum = String(i + 1).padStart(2, '0');
+        // 命名格式：{序号} - {曲目标题}.{格式}
+        const outputFileName = `${trackNum} - ${safeTitle}.${outputFormat}`;
+        const outputFilePath = path.join(tmpDir, outputFileName);
+
+        await splitTrack(audioLocalPath, outputFilePath, track.startTime, nextTrack?.startTime, outputFormat);
+        outputFiles.push(outputFilePath);
+
+        const splitPercent = 42 + Math.floor(((i + 1) / tracks.length) * 30);
+        sendProgress('split', splitPercent, `分轨进度: ${i + 1}/${tracks.length} - ${track.title}`);
+      }
+      sendProgress('split', 72, `分轨完成，共${outputFiles.length}个文件`);
+
+      // ---- Step 4: 上传到百度网盘 ----
+      // 目标目录与原音频文件相同
+      const targetDir = audioPath.substring(0, audioPath.lastIndexOf('/'));
+      const uploadResults: { filename: string; success: boolean; skipped?: boolean; error?: string }[] = [];
+
+      for (let i = 0; i < outputFiles.length; i++) {
+        const localFile = outputFiles[i];
+        const filename = path.basename(localFile);
+        const targetPath = `${targetDir}/${filename}`;
+
+        sendProgress('upload', 72 + Math.floor(((i) / outputFiles.length) * 26), `上传: ${filename}`);
+
+        // 检查文件是否已存在
+        const existsResult = await checkFileExists(targetPath, accessToken);
+        
+        if (existsResult.exists) {
+          // 发送询问事件，等待用户响应
+          const userChoice = await askUserOverwrite(event, taskId, filename);
+          if (userChoice === 'skip') {
+            uploadResults.push({ filename, success: true, skipped: true });
+            continue;
+          }
+          // overwrite 则继续上传（rtype=3 覆盖）
+        }
+
+        const uploadResult = await uploadFileToCloud(localFile, targetPath, accessToken);
+        uploadResults.push({ filename, success: uploadResult.success, error: uploadResult.error });
+      }
+
+      sendProgress('upload', 98, '上传完成，清理临时文件...');
+
+      // ---- Step 5: 清理临时文件 ----
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+
+      sendProgress('done', 100, '分轨上传全部完成！');
+
+      return {
+        success: true,
+        tracks: uploadResults.map(r => r.filename),
+        uploadResults
+      };
+    } catch (error: any) {
+      logger.error('[CUE] 分轨失败:', error.message);
+      // 清理临时目录
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+      sendProgress('error', 0, `错误: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * 用户对"文件已存在"的回复
+   * 参数：taskId, filename, choice ('overwrite' | 'skip')
+   */
+  ipcMain.on('cue-split-overwrite-choice', (_event, taskId: string, filename: string, choice: string) => {
+    const key = `${taskId}:${filename}`;
+    const resolver = overwriteResolvers.get(key);
+    if (resolver) {
+      resolver(choice);
+      overwriteResolvers.delete(key);
+    }
+  });
+}
+
+// ===== CUE 分轨辅助函数 =====
+
+// 存储"覆盖/跳过"的 Promise resolver
+const overwriteResolvers = new Map<string, (choice: string) => void>();
+
+/**
+ * 询问用户是否覆盖已存在的文件
+ */
+async function askUserOverwrite(event: IpcMainInvokeEvent, taskId: string, filename: string): Promise<string> {
+  return new Promise((resolve) => {
+    const key = `${taskId}:${filename}`;
+    overwriteResolvers.set(key, resolve);
+    // 通知渲染进程询问用户
+    event.sender.send('cue-split-file-exists', { taskId, filename });
+  });
+}
+
+/**
+ * 获取下载链接（通过 access_token 直接调用 API）
+ */
+async function getCueSplitDownloadLink(fsId: number, accessToken: string): Promise<string | null> {
+  try {
+    const response = await axios.get('https://pan.baidu.com/rest/2.0/xpan/multimedia', {
+      params: {
+        method: 'filemetas',
+        fsids: JSON.stringify([fsId]),
+        dlink: 1,
+        access_token: accessToken
+      },
+      headers: { 'User-Agent': 'pan.baidu.com' }
+    });
+    const list = response.data?.list;
+    if (!list || list.length === 0) return null;
+    const dlink: string = list[0].dlink;
+    if (!dlink) return null;
+    const url = new URL(dlink);
+    if (!url.searchParams.has('access_token')) {
+      url.searchParams.set('access_token', accessToken);
+    }
+    return url.toString();
+  } catch (error: any) {
+    logger.error('[CUE] 获取下载链接失败:', error.message);
+    return null;
+  }
+}
+
+/**
+ * 下载文件到本地路径
+ */
+async function downloadFileToPath(url: string, destPath: string): Promise<void> {
+  const response = await axios({
+    method: 'GET',
+    url,
+    responseType: 'stream',
+    headers: { 'User-Agent': 'pan.baidu.com', 'Referer': 'https://pan.baidu.com/' }
+  });
+  const writer = fs.createWriteStream(destPath);
+  response.data.pipe(writer);
+  await new Promise<void>((resolve, reject) => {
+    writer.on('finish', resolve);
+    writer.on('error', reject);
+  });
+}
+
+/**
+ * 带进度回调地下载文件
+ */
+async function downloadFileToPathWithProgress(
+  url: string,
+  destPath: string,
+  onProgress: (percent: number) => void
+): Promise<void> {
+  const response = await axios({
+    method: 'GET',
+    url,
+    responseType: 'stream',
+    headers: { 'User-Agent': 'pan.baidu.com', 'Referer': 'https://pan.baidu.com/' }
+  });
+
+  const total = parseInt(response.headers['content-length'] || '0', 10);
+  let loaded = 0;
+  const writer = fs.createWriteStream(destPath);
+
+  response.data.on('data', (chunk: Buffer) => {
+    loaded += chunk.length;
+    if (total > 0) {
+      onProgress(Math.round((loaded / total) * 100));
+    }
+  });
+  response.data.pipe(writer);
+
+  await new Promise<void>((resolve, reject) => {
+    writer.on('finish', resolve);
+    writer.on('error', reject);
+  });
+}
+
+/**
+ * CUE 文件解析 - 提取曲目列表
+ */
+interface CueTrack {
+  index: number;
+  title: string;
+  performer: string;
+  startTime: string; // "MM:SS:FF" 格式
+}
+
+function parseCueFile(content: string): CueTrack[] {
+  const tracks: CueTrack[] = [];
+  const lines = content.split(/\r?\n/);
+  
+  let currentTrack: Partial<CueTrack> | null = null;
+  let globalPerformer = '';
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    const performerMatch = trimmed.match(/^PERFORMER\s+"?([^"]+)"?$/i);
+    if (performerMatch) {
+      if (currentTrack) {
+        currentTrack.performer = performerMatch[1];
+      } else {
+        globalPerformer = performerMatch[1];
+      }
+      continue;
+    }
+
+    const trackMatch = trimmed.match(/^TRACK\s+(\d+)\s+AUDIO$/i);
+    if (trackMatch) {
+      if (currentTrack && currentTrack.startTime) {
+        tracks.push(currentTrack as CueTrack);
+      }
+      currentTrack = {
+        index: parseInt(trackMatch[1], 10),
+        title: `Track ${trackMatch[1]}`,
+        performer: globalPerformer,
+        startTime: '00:00:00'
+      };
+      continue;
+    }
+
+    const titleMatch = trimmed.match(/^TITLE\s+"?([^"]+)"?$/i);
+    if (titleMatch && currentTrack) {
+      currentTrack.title = titleMatch[1];
+      continue;
+    }
+
+    const indexMatch = trimmed.match(/^INDEX\s+01\s+(\d{2}:\d{2}:\d{2})$/i);
+    if (indexMatch && currentTrack) {
+      currentTrack.startTime = indexMatch[1];
+      continue;
+    }
+  }
+
+  if (currentTrack && currentTrack.startTime) {
+    tracks.push(currentTrack as CueTrack);
+  }
+
+  return tracks;
+}
+
+/**
+ * CUE 时间格式转为秒数 (MM:SS:FF -> seconds)
+ * FF 是帧数（75帧/秒）
+ */
+function cueTimeToSeconds(time: string): number {
+  const parts = time.split(':');
+  const mm = parseInt(parts[0], 10);
+  const ss = parseInt(parts[1], 10);
+  const ff = parseInt(parts[2], 10);
+  return mm * 60 + ss + ff / 75;
+}
+
+/**
+ * 使用 ffmpeg 分割单个曲目
+ */
+async function splitTrack(
+  inputPath: string,
+  outputPath: string,
+  startTime: string,
+  endTime: string | undefined,
+  outputFormat: 'flac' | 'wav' | 'm4a'
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const startSeconds = cueTimeToSeconds(startTime);
+    
+    let cmd = ffmpeg(inputPath)
+      .seekInput(startSeconds);
+    
+    if (endTime) {
+      const endSeconds = cueTimeToSeconds(endTime);
+      cmd = cmd.duration(endSeconds - startSeconds);
+    }
+
+    if (outputFormat === 'flac') {
+      cmd = cmd.audioCodec('flac');
+    } else if (outputFormat === 'wav') {
+      cmd = cmd.audioCodec('pcm_s16le').format('wav');
+    } else if (outputFormat === 'm4a') {
+      // m4a-alac (Apple Lossless)
+      cmd = cmd.audioCodec('alac').format('ipod');
+    }
+
+    cmd
+      .output(outputPath)
+      .on('end', () => resolve())
+      .on('error', (err: Error) => reject(err))
+      .run();
+  });
+}
+
+/**
+ * 检查百度网盘中文件是否存在
+ */
+async function checkFileExists(filePath: string, accessToken: string): Promise<{ exists: boolean }> {
+  try {
+    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+    const filename = filePath.substring(filePath.lastIndexOf('/') + 1);
+
+    const response = await axios.get('https://pan.baidu.com/rest/2.0/xpan/file', {
+      params: {
+        method: 'list',
+        dir,
+        order: 'name',
+        limit: 1000,
+        web: 1,
+        access_token: accessToken
+      },
+      headers: { 'User-Agent': 'pan.baidu.com' }
+    });
+
+    const list: any[] = response.data?.list || [];
+    const found = list.find(f => f.server_filename === filename);
+    return { exists: !!found };
+  } catch {
+    return { exists: false };
+  }
+}
+
+/**
+ * 上传本地文件到百度网盘（三步上传）
+ */
+async function uploadFileToCloud(
+  localPath: string,
+  targetPath: string,
+  accessToken: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const fileBuffer = fs.readFileSync(localPath);
+    const fileSize = fileBuffer.length;
+    
+    // 计算MD5
+    const wordArray = CryptoJS.lib.WordArray.create(fileBuffer as any);
+    const md5 = CryptoJS.MD5(wordArray).toString();
+    const blockList = [md5];
+
+    // 步骤1: 预创建
+    const precreateResp = await axios.post(
+      'https://pan.baidu.com/rest/2.0/xpan/file',
+      new URLSearchParams({
+        path: targetPath,
+        size: fileSize.toString(),
+        isdir: '0',
+        autoinit: '1',
+        block_list: JSON.stringify(blockList),
+        rtype: '3'
+      }).toString(),
+      {
+        params: { method: 'precreate', access_token: accessToken },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'User-Agent': 'pan.baidu.com'
+        }
+      }
+    );
+
+    const precreateData = precreateResp.data;
+    if (precreateData.errno !== undefined && precreateData.errno !== 0) {
+      return { success: false, error: `预创建失败: ${precreateData.errmsg} (${precreateData.errno})` };
+    }
+
+    const uploadid = precreateData.uploadid;
+    
+    // 如果秒传成功
+    if (precreateData.return_type === 2) {
+      logger.log('[CUE-UPLOAD] 文件秒传成功:', targetPath);
+      return { success: true };
+    }
+
+    // 步骤2: 上传分片（文件较小，一次性上传）
+    const uploadUrl = new URL('https://d.pcs.baidu.com/rest/2.0/pcs/superfile2');
+    uploadUrl.searchParams.set('method', 'upload');
+    uploadUrl.searchParams.set('access_token', accessToken);
+    uploadUrl.searchParams.set('type', 'tmpfile');
+    uploadUrl.searchParams.set('path', targetPath);
+    uploadUrl.searchParams.set('uploadid', uploadid);
+    uploadUrl.searchParams.set('partseq', '0');
+
+    // 使用 FormData 上传
+    const formData = new (require('form-data'))();
+    formData.append('file', fileBuffer, { filename: path.basename(localPath) });
+
+    const uploadResp = await axios.post(uploadUrl.toString(), formData, {
+      headers: {
+        ...formData.getHeaders(),
+        'User-Agent': 'pan.baidu.com'
+      },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity
+    });
+
+    if (uploadResp.data.errno !== undefined && uploadResp.data.errno !== 0) {
+      return { success: false, error: `上传分片失败: ${uploadResp.data.errmsg}` };
+    }
+
+    // 步骤3: 创建文件（完成上传）
+    const createResp = await axios.post(
+      'https://pan.baidu.com/rest/2.0/xpan/file',
+      new URLSearchParams({
+        path: targetPath,
+        size: fileSize.toString(),
+        isdir: '0',
+        uploadid,
+        block_list: JSON.stringify(blockList),
+        rtype: '3'
+      }).toString(),
+      {
+        params: { method: 'create', access_token: accessToken },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'User-Agent': 'pan.baidu.com'
+        }
+      }
+    );
+
+    const createData = createResp.data;
+    if (createData.errno !== undefined && createData.errno !== 0) {
+      return { success: false, error: `创建文件失败: ${createData.errmsg} (${createData.errno})` };
+    }
+
+    logger.log('[CUE-UPLOAD] 文件上传成功:', targetPath);
+    return { success: true };
+  } catch (error: any) {
+    logger.error('[CUE-UPLOAD] 上传失败:', error.message);
+    return { success: false, error: error.message };
+  }
 }
 
 // 注册流式音频自定义协议方案（必须在 app.whenReady() 之前调用）
