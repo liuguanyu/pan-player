@@ -15,12 +15,13 @@ let ffmpegPath = ffmpegStatic;
 if (app && !app.isPackaged) {
     // 尝试在 node_modules 中找到 ffmpeg-static
     // 注意：这里的路径解析假设项目根目录结构
-    const devFfmpegPath = resolve(__dirname, '../../node_modules/ffmpeg-static/ffmpeg.exe');
+    const ext = process.platform === 'win32' ? '.exe' : '';
+    const devFfmpegPath = resolve(__dirname, `../../node_modules/ffmpeg-static/ffmpeg${ext}`);
     if (existsSync(devFfmpegPath)) {
         ffmpegPath = devFfmpegPath;
     } else {
         // 如果找不到，尝试另外一种常见的结构
-        const altDevFfmpegPath = resolve(process.cwd(), 'node_modules/ffmpeg-static/ffmpeg.exe');
+        const altDevFfmpegPath = resolve(process.cwd(), `node_modules/ffmpeg-static/ffmpeg${ext}`);
         if (existsSync(altDevFfmpegPath)) {
             ffmpegPath = altDevFfmpegPath;
         }

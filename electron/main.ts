@@ -13,7 +13,11 @@ import CryptoJS from 'crypto-js';
 
 // 设置 ffmpeg 路径
 if (ffmpegStatic) {
-  ffmpeg.setFfmpegPath(ffmpegStatic);
+  let ffmpegPath = ffmpegStatic;
+  if (ffmpegPath.includes('app.asar')) {
+    ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
+  }
+  ffmpeg.setFfmpegPath(ffmpegPath);
 }
 
 let mainWindow: BrowserWindow | null = null;

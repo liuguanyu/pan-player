@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "electron:build": "electron-builder"
+    "electron:build": "electron-builder",
+    "electron:build:win": "electron-builder --win",
+    "electron:build:mac": "electron-builder --mac",
+    "electron:build:linux": "electron-builder --linux",
+    "electron:build:all": "electron-builder -wml"
   },
   "keywords": [
     "electron",
@@ -69,11 +73,14 @@
     "appId": "com.dupan.player",
     "productName": "度盘播放器",
     "directories": {
-      "output": "dist-electron"
+      "output": "release"
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "dist-electron/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**/*"
     ],
     "win": {
       "target": "nsis",
