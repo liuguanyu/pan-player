@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { baiduAuth } from '@/services/auth.service';
 import { PlaylistItem } from '@/types/file';
+import { Scissors } from 'lucide-react';
 
 type OutputFormat = 'flac' | 'wav' | 'm4a';
 
@@ -45,6 +47,8 @@ export const CueSplitDialog: React.FC<CueSplitDialogProps> = ({
   const [progress, setProgress] = useState<ProgressInfo>({ stage: '', percent: 0, message: '' });
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
+  // 是否最小化到角落图标
+  const [minimized, setMinimized] = useState(false);
 
   // 询问覆盖时的当前文件名
   const [overwriteFilename, setOverwriteFilename] = useState('');
@@ -60,6 +64,9 @@ export const CueSplitDialog: React.FC<CueSplitDialogProps> = ({
   useEffect(() => {
     return () => cleanup();
   }, [cleanup]);
+
+  // 任务进行中的阶段（不能直接关闭，需最小化）
+  const isActiveStage = stage === 'splitting' || stage === 'overwrite-ask';
 
   const handleStart = async () => {
     if (!song) return;
@@ -131,8 +138,70 @@ export const CueSplitDialog: React.FC<CueSplitDialogProps> = ({
     m4a: 'M4A-ALAC（Apple无损）',
   };
 
+  // 点击弹窗外部时的处理
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
+      if (isActiveStage) {
+        // 任务进行中 → 最小化到角落图标
+        setMinimized(true);
+      } else {
+        // 选格式/完成/错误 → 正常关闭
+        onClose();
+      }
+    }
+  };
+
+  // 最小化时渲染角落浮动按钮
+  if (minimized && song) {
+    const stageLabelMap: Record<Stage, string> = {
+      'select-format': '选择格式',
+      'splitting': '分轨中',
+      'overwrite-ask': '等待确认',
+      'done': '已完成',
+      'error': '出错',
+    };
+
+    return ReactDOM.createPortal(
+      <button
+        onClick={() => setMinimized(false)}
+        title={`无损分轨 - ${stageLabelMap[stage]}，点击展开`}
+        className="fixed bottom-6 right-6 z-50 flex flex-col items-center justify-center w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all hover:scale-105 active:scale-95 cursor-pointer border-2 border-primary/30"
+        style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.25)' }}
+      >
+        <Scissors className="h-5 w-5 mb-0.5" />
+        <span className="text-[10px] font-medium leading-tight text-center px-1">
+          {progress.percent > 0 ? `${progress.percent}%` : stageLabelMap[stage]}
+        </span>
+        {/* 进度环 */}
+        {stage === 'splitting' && progress.percent > 0 && (
+          <svg
+            className="absolute inset-0 w-full h-full -rotate-90"
+            viewBox="0 0 56 56"
+          >
+            <circle
+              cx="28" cy="28" r="25"
+              fill="none"
+              stroke="rgba(255,255,255,0.25)"
+              strokeWidth="3"
+            />
+            <circle
+              cx="28" cy="28" r="25"
+              fill="none"
+              stroke="rgba(255,255,255,0.85)"
+              strokeWidth="3"
+              strokeDasharray={`${2 * Math.PI * 25}`}
+              strokeDashoffset={`${2 * Math.PI * 25 * (1 - progress.percent / 100)}`}
+              strokeLinecap="round"
+            />
+          </svg>
+        )}
+      </button>,
+      document.body
+    );
+  }
+
   return (
-    <Dialog open={!!song} onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog open={!!song && !minimized} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg w-full">
         <DialogHeader>
           <DialogTitle>无损分轨</DialogTitle>
@@ -238,8 +307,11 @@ export const CueSplitDialog: React.FC<CueSplitDialogProps> = ({
               })()}
             </div>
             <p className="text-xs text-muted-foreground text-center">
-              请勿关闭窗口，分轨可能需要几分钟...
+              任务正在后台运行，点击外部可最小化到角落...
             </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setMinimized(true)}>最小化</Button>
+            </DialogFooter>
           </div>
         )}
 
@@ -258,6 +330,9 @@ export const CueSplitDialog: React.FC<CueSplitDialogProps> = ({
               网盘中已存在同名文件，请选择操作：
             </p>
             <DialogFooter className="gap-2">
+              <Button variant="secondary" onClick={() => setMinimized(true)} className="mr-auto">
+                最小化
+              </Button>
               <Button variant="outline" onClick={() => handleOverwriteChoice('skip')}>
                 跳过
               </Button>
