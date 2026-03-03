@@ -13,17 +13,16 @@ let ffmpegPath = ffmpegStatic;
 // 在开发模式下，ffmpeg-static 返回的路径可能不正确，我们需要指向 node_modules 中的实际路径
 // 添加保护措施，确保 app 对象存在
 if (app && !app.isPackaged) {
-    // 尝试在 node_modules 中找到 ffmpeg-static
-    // 注意：这里的路径解析假设项目根目录结构
-    const ext = process.platform === 'win32' ? '.exe' : '';
-    const devFfmpegPath = resolve(__dirname, `../../node_modules/ffmpeg-static/ffmpeg${ext}`);
-    if (existsSync(devFfmpegPath)) {
-        ffmpegPath = devFfmpegPath;
+    // 开发模式下 ffmpeg-static 应该能返回正确的绝对路径，因为并未被 asar 打包
+    // 强制使用 ffmpegStatic 以防我们推断的路径有误
+    if (ffmpegStatic && existsSync(ffmpegStatic)) {
+        ffmpegPath = ffmpegStatic;
     } else {
-        // 如果找不到，尝试另外一种常见的结构
-        const altDevFfmpegPath = resolve(process.cwd(), `node_modules/ffmpeg-static/ffmpeg${ext}`);
-        if (existsSync(altDevFfmpegPath)) {
-            ffmpegPath = altDevFfmpegPath;
+        // 作为后备回退方案
+        const ext = process.platform === 'win32' ? '.exe' : '';
+        const devFfmpegPath = resolve(process.cwd(), `node_modules/ffmpeg-static/ffmpeg${ext}`);
+        if (existsSync(devFfmpegPath)) {
+            ffmpegPath = devFfmpegPath;
         }
     }
 } else {
@@ -34,7 +33,7 @@ if (app && !app.isPackaged) {
 }
 
 if (ffmpegPath) {
-  logger.log('[Transcoder] Setting ffmpeg path:', ffmpegPath);
+  logger.log('[Transcoder] DEV/PACKAGED Setting ffmpeg path. isPackaged:', app?.isPackaged, ' final ffmpegPath:', ffmpegPath, 'original ffmpegStatic:', ffmpegStatic);
   ffmpeg.setFfmpegPath(ffmpegPath);
 } else {
   logger.error('[Transcoder] Failed to find ffmpeg path');
