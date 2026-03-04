@@ -5,35 +5,71 @@ export interface LyricLine {
   isInterlude?: boolean; // 是否为间奏
 }
 
+export interface LRCMetadata {
+  ti?: string; // 歌曲名
+  ar?: string; // 歌手名
+  al?: string; // 专辑名
+  by?: string; // 歌词制作者
+  offset?: number; // 时间补偿值，单位毫秒
+}
+
+export interface ParseResult {
+  lines: LyricLine[];
+  metadata: LRCMetadata;
+}
+
 /**
  * 解析LRC歌词
  * @param lrcContent LRC文件内容
  * @returns 解析后的歌词行数组
  */
-export const parseLRC = (lrcContent: string): LyricLine[] => {
-  if (!lrcContent) return [];
+export const parseLRC = (lrcContent: string): ParseResult => {
+  if (!lrcContent) return { lines: [], metadata: {} };
 
   const lines: LyricLine[] = [];
+  const metadata: LRCMetadata = {};
   const lrcLines = lrcContent.split('\n');
 
   // LRC时间标签正则表达式: [mm:ss.xx] 或 [mm:ss]
   const timeRegex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
+  
+  // LRC元数据标签正则表达式: [ti:title]
+  const metadataRegex = /^\[(ti|ar|al|by|offset):(.*)\]$/i;
 
   for (const line of lrcLines) {
-    const matches = [...line.matchAll(timeRegex)];
+    const trimmedLine = line.trim();
+    if (!trimmedLine) continue;
+
+    // 检查元数据标签
+    const metaMatch = trimmedLine.match(metadataRegex);
+    if (metaMatch) {
+      const key = metaMatch[1].toLowerCase() as keyof LRCMetadata;
+      const value = metaMatch[2].trim();
+      if (key === 'offset') {
+        const offsetVal = parseInt(value, 10);
+        if (!isNaN(offsetVal)) {
+          metadata.offset = offsetVal;
+        }
+      } else {
+        metadata[key] = value as any;
+      }
+      continue;
+    }
+
+    const matches = [...trimmedLine.matchAll(timeRegex)];
     
     if (matches.length > 0) {
       // 提取歌词文本（移除所有时间标签）
-      const text = line.replace(timeRegex, '').trim();
+      const text = trimmedLine.replace(timeRegex, '').trim();
       
-      if (text) {
+      if (text || true) { // 允许空行
         // 为每个时间标签创建一行歌词
         for (const match of matches) {
           const minutes = parseInt(match[1], 10);
           const seconds = parseInt(match[2], 10);
           const milliseconds = match[3] ? parseInt(match[3].padEnd(3, '0'), 10) : 0;
           
-          const time = minutes * 60 + seconds + milliseconds / 1000;
+          let time = minutes * 60 + seconds + milliseconds / 1000;
           
           lines.push({
             id: generateLyricId(),
@@ -49,7 +85,7 @@ export const parseLRC = (lrcContent: string): LyricLine[] => {
   // 按时间排序
   lines.sort((a, b) => a.time - b.time);
 
-  return lines;
+  return { lines, metadata };
 };
 
 /**
@@ -141,17 +177,31 @@ export const parseLRCTimeTag = (timeStr: string): number => {
 /**
  * 生成LRC文件内容
  * @param lyrics 歌词数组
+ * @param metadata LRC元数据
  * @returns LRC格式的字符串
  */
-export const generateLRC = (lyrics: LyricLine[]): string => {
+export const generateLRC = (lyrics: LyricLine[], metadata?: LRCMetadata): string => {
+  let result = '';
+
+  // 写入元数据
+  if (metadata) {
+    if (metadata.ti) result += `[ti:${metadata.ti}]\n`;
+    if (metadata.ar) result += `[ar:${metadata.ar}]\n`;
+    if (metadata.al) result += `[al:${metadata.al}]\n`;
+    if (metadata.by) result += `[by:${metadata.by}]\n`;
+    if (metadata.offset !== undefined) result += `[offset:${metadata.offset}]\n`;
+  }
+
   // 只包含有时间标记的歌词
   const validLyrics = lyrics.filter(line => line.time >= 0);
   
   // 按时间排序
   const sorted = [...validLyrics].sort((a, b) => a.time - b.time);
   
-  return sorted.map(line => {
+  result += sorted.map(line => {
     const timeTag = formatLRCTime(line.time);
     return `${timeTag}${line.text}`;
   }).join('\n');
+
+  return result;
 };

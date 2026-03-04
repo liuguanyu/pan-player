@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { Playlist, PlaylistItem } from '@/types/file';
-import { LyricLine } from '@/lib/lrc-parser';
+import { LyricLine, LRCMetadata } from '@/lib/lrc-parser';
 
 export type PlaybackMode = 'order' | 'random' | 'single';
 
@@ -53,6 +53,7 @@ interface PlayerState {
   // 歌词
   lyrics: string | null;
   parsedLyrics: LyricLine[] | null;
+  lrcMetadata: LRCMetadata | null;
   showLyrics: boolean;
   isEditingLyrics: boolean; // 是否处于歌词编辑模式
   
@@ -90,6 +91,7 @@ interface PlayerState {
   // 歌词方法
   setLyrics: (lyrics: string | null) => void;
   setParsedLyrics: (parsedLyrics: LyricLine[] | null) => void;
+  setLrcMetadata: (lrcMetadata: LRCMetadata | null) => void;
   setShowLyrics: (show: boolean) => void;
   setIsEditingLyrics: (isEditing: boolean) => void;
   updateLyricLine: (id: string, updates: Partial<LyricLine>) => void;
@@ -125,6 +127,7 @@ export const usePlayerStore = create<PlayerState>()(
       recentSongs: [],
       lyrics: null,
       parsedLyrics: null,
+      lrcMetadata: null,
       showLyrics: false,
       isEditingLyrics: false,
       showVisualizer: false,
@@ -423,6 +426,7 @@ export const usePlayerStore = create<PlayerState>()(
       // 歌词方法
       setLyrics: (lyrics) => set({ lyrics }),
       setParsedLyrics: (parsedLyrics) => set({ parsedLyrics }),
+      setLrcMetadata: (lrcMetadata) => set({ lrcMetadata }),
       setShowLyrics: (showLyrics) => set({ showLyrics }),
       setIsEditingLyrics: (isEditingLyrics) => set({ isEditingLyrics }),
       

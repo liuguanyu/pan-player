@@ -36,7 +36,8 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics, on
     setPlaybackMode,
     setPlaybackRate,
     playNext,
-    playPrevious
+    playPrevious,
+    lrcMetadata
   } = usePlayerStore();
   
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
@@ -92,6 +93,10 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics, on
     setVolume(value[0]);
   };
   
+  const displayTitle = lrcMetadata && (lrcMetadata.ti || lrcMetadata.ar) 
+    ? `${lrcMetadata.ti || ''}${lrcMetadata.ar ? ` - ${lrcMetadata.ar}` : ''}`
+    : (currentSong ? currentSong.server_filename : '未播放音乐');
+
   return (
     <div className="flex flex-col h-full">
         {/* 歌曲信息和控制按钮 */}
@@ -100,10 +105,10 @@ const PlayerControls: React.FC<PlayerControlsProps> = memo(({ onToggleLyrics, on
             <h2
               className="text-lg font-semibold whitespace-nowrap text-white drop-shadow-md"
               style={{
-                animation: currentSong && currentSong.server_filename.length > 20 ? 'scroll 10s linear infinite' : 'none'
+                animation: currentSong && displayTitle.length > 20 ? 'scroll 10s linear infinite' : 'none'
               }}
             >
-              {currentSong ? currentSong.server_filename : '未播放音乐'}
+              {displayTitle}
             </h2>
             <style>{`
               @keyframes scroll {

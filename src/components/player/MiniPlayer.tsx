@@ -12,6 +12,7 @@ export const MiniPlayer: React.FC = () => {
     currentTime,
     playbackRate,
     parsedLyrics,
+    lrcMetadata,
     playNext,
     playPrevious
   } = usePlayerStore();
@@ -22,16 +23,34 @@ export const MiniPlayer: React.FC = () => {
   // 更新当前歌词
   useEffect(() => {
     if (parsedLyrics && parsedLyrics.length > 0) {
-      const index = getCurrentLyricIndex(parsedLyrics, currentTime);
+      const offsetInSeconds = (lrcMetadata?.offset || 0) / 1000;
+      const index = getCurrentLyricIndex(parsedLyrics, currentTime + offsetInSeconds);
+      
       if (index >= 0 && index < parsedLyrics.length) {
         setCurrentLyricText(parsedLyrics[index].text);
+      } else {
+        if (lrcMetadata && (lrcMetadata.ti || lrcMetadata.ar)) {
+          const title = lrcMetadata.ti || '';
+          const artist = lrcMetadata.ar ? ` - ${lrcMetadata.ar}` : '';
+          setCurrentLyricText(`${title}${artist}`);
+        } else if (currentSong) {
+          setCurrentLyricText(currentSong.server_filename);
+        } else {
+          setCurrentLyricText('暂无播放');
+        }
       }
     } else if (currentSong) {
-      setCurrentLyricText(currentSong.server_filename);
+      if (lrcMetadata && (lrcMetadata.ti || lrcMetadata.ar)) {
+        const title = lrcMetadata.ti || '';
+        const artist = lrcMetadata.ar ? ` - ${lrcMetadata.ar}` : '';
+        setCurrentLyricText(`${title}${artist}`);
+      } else {
+        setCurrentLyricText(currentSong.server_filename);
+      }
     } else {
       setCurrentLyricText('暂无播放');
     }
-  }, [parsedLyrics, currentTime, currentSong]);
+  }, [parsedLyrics, lrcMetadata, currentTime, currentSong]);
 
   const handleToggleMiniMode = () => {
     if (window.electronAPI && window.electronAPI.toggleMiniMode) {

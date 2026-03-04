@@ -28,6 +28,8 @@ export const LyricsEditor: React.FC = () => {
   const {
     parsedLyrics,
     setParsedLyrics,
+    lrcMetadata,
+    setLrcMetadata,
     currentTime,
     updateLyricLine,
     addLyricLine,
@@ -43,6 +45,7 @@ export const LyricsEditor: React.FC = () => {
 
   const [textInput, setTextInput] = useState('');
   const [showTextInput, setShowTextInput] = useState(false);
+  const [showMetadata, setShowMetadata] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showOverwriteDialog, setShowOverwriteDialog] = useState(false);
@@ -103,7 +106,8 @@ export const LyricsEditor: React.FC = () => {
       try {
         const content = await file.text();
         const lyrics = parseLRC(content);
-        setParsedLyrics(lyrics);
+        setParsedLyrics(lyrics.lines);
+        setLrcMetadata(lyrics.metadata);
         alert('LRC文件导入成功！可以进行二次编辑。');
       } catch (error) {
         console.error('导入LRC文件失败:', error);
@@ -117,6 +121,7 @@ export const LyricsEditor: React.FC = () => {
   const handleClear = () => {
     if (window.confirm('确定要清空所有歌词吗？')) {
       setParsedLyrics([]);
+      setLrcMetadata(null);
     }
   };
 
@@ -125,7 +130,7 @@ export const LyricsEditor: React.FC = () => {
       alert('没有可导出的歌词');
       return;
     }
-    const lrcContent = generateLRC(parsedLyrics);
+    const lrcContent = generateLRC(parsedLyrics, lrcMetadata || undefined);
     const blob = new Blob([lrcContent], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -170,7 +175,7 @@ export const LyricsEditor: React.FC = () => {
     setIsUploading(true);
     setUploadProgress(0);
     try {
-      const lrcContent = generateLRC(parsedLyrics!);
+      const lrcContent = generateLRC(parsedLyrics!, lrcMetadata || undefined);
       const result = await baiduAPI.uploadLrcFile(
         lrcPath,
         lrcContent,
@@ -217,37 +222,45 @@ export const LyricsEditor: React.FC = () => {
   // ---------- 行操作 ----------
 
   const handleAddInterlude = () => {
+    const offsetInSeconds = (lrcMetadata?.offset || 0) / 1000;
+    const tagTime = currentTime + offsetInSeconds;
+    
     if (selectedLineId) {
       const selectedIndex = parsedLyrics?.findIndex(line => line.id === selectedLineId) ?? -1;
       if (selectedIndex >= 0) {
-        const id = insertLyricLine(selectedIndex + 1, currentTime, '♪ 间奏 ♪');
+        const id = insertLyricLine(selectedIndex + 1, tagTime, '♪ 间奏 ♪');
         updateLyricLine(id, { isInterlude: true });
         return;
       }
     }
-    const id = addLyricLine(currentTime, '♪ 间奏 ♪');
+    const id = addLyricLine(tagTime, '♪ 间奏 ♪');
     updateLyricLine(id, { isInterlude: true });
   };
 
   const handleAddEmptyLine = () => {
+    const offsetInSeconds = (lrcMetadata?.offset || 0) / 1000;
+    const tagTime = currentTime + offsetInSeconds;
+
     if (selectedLineId) {
       const selectedIndex = parsedLyrics?.findIndex(line => line.id === selectedLineId) ?? -1;
       if (selectedIndex >= 0) {
-        insertLyricLine(selectedIndex + 1, currentTime, '');
+        insertLyricLine(selectedIndex + 1, tagTime, '');
         return;
       }
     }
-    addLyricLine(currentTime, '');
+    addLyricLine(tagTime, '');
   };
 
   const handleSetCurrentTime = (id: string) => {
-    updateLyricLine(id, { time: currentTime });
+    const offsetInSeconds = (lrcMetadata?.offset || 0) / 1000;
+    updateLyricLine(id, { time: currentTime + offsetInSeconds });
   };
 
   const handleJumpToTime = (time: number) => {
     const audio = document.querySelector('audio');
     if (audio) {
-      audio.currentTime = time;
+      const offsetInSeconds = (lrcMetadata?.offset || 0) / 1000;
+      audio.currentTime = Math.max(0, time - offsetInSeconds);
     }
   };
 
@@ -341,6 +354,16 @@ export const LyricsEditor: React.FC = () => {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setShowMetadata(!showMetadata)}
+            className="gap-1"
+          >
+            <FileText className="h-4 w-4" />
+            {showMetadata ? '隐藏元数据' : '编辑元数据'}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleImportText}
             className="gap-1"
           >
@@ -423,6 +446,61 @@ export const LyricsEditor: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* 元数据编辑区 */}
+      {showMetadata && (
+        <div className="mb-4 p-4 border rounded bg-muted/30 grid grid-cols-2 gap-4">
+          <div className="col-span-2">
+            <h5 className="text-sm font-medium mb-2">LRC 元数据</h5>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">歌曲名 (ti)</label>
+            <Input 
+              value={lrcMetadata?.ti || ''} 
+              onChange={e => setLrcMetadata({ ...lrcMetadata, ti: e.target.value })} 
+              placeholder="例如: 稻香" 
+              className="h-8"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">歌手 (ar)</label>
+            <Input 
+              value={lrcMetadata?.ar || ''} 
+              onChange={e => setLrcMetadata({ ...lrcMetadata, ar: e.target.value })} 
+              placeholder="例如: 周杰伦" 
+              className="h-8"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">专辑 (al)</label>
+            <Input 
+              value={lrcMetadata?.al || ''} 
+              onChange={e => setLrcMetadata({ ...lrcMetadata, al: e.target.value })} 
+              placeholder="例如: 魔杰座" 
+              className="h-8"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">歌词制作者 (by)</label>
+            <Input 
+              value={lrcMetadata?.by || ''} 
+              onChange={e => setLrcMetadata({ ...lrcMetadata, by: e.target.value })} 
+              placeholder="例如: 某某某" 
+              className="h-8"
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs text-muted-foreground mb-1 block">时间补偿 offset (毫秒)</label>
+            <Input 
+              type="number"
+              value={lrcMetadata?.offset || ''} 
+              onChange={e => setLrcMetadata({ ...lrcMetadata, offset: parseInt(e.target.value, 10) || undefined })} 
+              placeholder="例如: 0" 
+              className="h-8 w-1/2"
+            />
+          </div>
+        </div>
+      )}
 
       {/* 文本输入区 */}
       {showTextInput && (

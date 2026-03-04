@@ -14,6 +14,8 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
     currentTime,
     parsedLyrics,
     setParsedLyrics,
+    lrcMetadata,
+    setLrcMetadata,
     isEditingLyrics,
     setIsEditingLyrics
   } = usePlayerStore();
@@ -31,13 +33,16 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
   // 根据当前播放时间更新当前歌词索引 - 优化性能，减少计算频率
   useEffect(() => {
     if (lyrics.length > 0) {
-      const index = getCurrentLyricIndex(lyrics, currentTime);
+      const offsetInSeconds = (lrcMetadata?.offset || 0) / 1000;
+      // offset为正，歌词提前显示，即对应的实际时间为 line.time - offset
+      // 反过来想，如果当前时间是 currentTime，相当于匹配的标签时间是 currentTime + offset
+      const index = getCurrentLyricIndex(lyrics, currentTime + offsetInSeconds);
       // 只有当索引真正变化时才更新状态
       if (index !== currentIndex) {
         setCurrentIndex(index);
       }
     }
-  }, [currentTime, lyrics, currentIndex]);
+  }, [currentTime, lyrics, currentIndex, lrcMetadata?.offset]);
 
   // 自动滚动到当前歌词 - 优化性能，只在索引变化时滚动
   useEffect(() => {
@@ -51,7 +56,10 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
         
         // 获取歌词容器（containerRef.current.children[0] 是内部的 max-w-2xl div）
         const lyricsContainer = containerRef.current.children[0];
-        const currentElement = lyricsContainer.children[currentIndex] as HTMLElement;
+        
+        // 查找所有包含 data-index 属性的歌词行元素
+        const lyricElements = Array.from(lyricsContainer.querySelectorAll('[data-index]'));
+        const currentElement = lyricElements[currentIndex] as HTMLElement;
         
         if (currentElement) {
           currentElement.scrollIntoView({
@@ -76,8 +84,9 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
       try {
         const content = await file.text();
         const parsed = parseLRC(content);
-        setLyrics(parsed);
-        setParsedLyrics(parsed);
+        setLyrics(parsed.lines);
+        setParsedLyrics(parsed.lines);
+        setLrcMetadata(parsed.metadata);
       } catch (error) {
         console.error('解析LRC文件失败:', error);
         alert('解析LRC文件失败');
@@ -130,9 +139,19 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
         <div className="flex-1 overflow-y-auto" ref={containerRef}>
         <div className="max-w-2xl mx-auto space-y-6 py-[50vh]">
           {lyrics.length > 0 ? (
-            lyrics.map((line, index) => (
+            <>
+              {lrcMetadata && (lrcMetadata.ti || lrcMetadata.ar || lrcMetadata.al || lrcMetadata.by) && (
+                <div className="text-center space-y-2 mb-12 text-muted-foreground/70">
+                  {lrcMetadata.ti && <div className="text-2xl font-bold text-foreground/80">{lrcMetadata.ti}</div>}
+                  {lrcMetadata.ar && <div className="text-sm">歌手: {lrcMetadata.ar}</div>}
+                  {lrcMetadata.al && <div className="text-sm">专辑: {lrcMetadata.al}</div>}
+                  {lrcMetadata.by && <div className="text-xs opacity-60">作词: {lrcMetadata.by}</div>}
+                </div>
+              )}
+              {lyrics.map((line, index) => (
               <div
                 key={index}
+                data-index={index}
                 className={`text-center transition-all duration-300 cursor-pointer hover:text-primary ${
                   index === currentIndex
                     ? 'text-2xl font-bold text-primary scale-110'
@@ -143,14 +162,16 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
                   if (player.currentSong) {
                     const audio = document.querySelector('audio');
                     if (audio) {
-                      audio.currentTime = line.time;
+                      const offsetInSeconds = (player.lrcMetadata?.offset || 0) / 1000;
+                      audio.currentTime = Math.max(0, line.time - offsetInSeconds);
                     }
                   }
                 }}
               >
                 {line.text}
               </div>
-            ))
+            ))}
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center h-full space-y-4">
               <p className="text-lg text-muted-foreground">暂无歌词</p>

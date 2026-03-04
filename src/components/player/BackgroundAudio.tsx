@@ -26,6 +26,7 @@ export const BackgroundAudio = () => {
     setDuration,
     playNext,
     setParsedLyrics,
+    setLrcMetadata,
     updatePlaylistItemDuration
   } = usePlayerStore();
 
@@ -682,6 +683,7 @@ export const BackgroundAudio = () => {
     const loadAutoLyrics = async () => {
       if (!currentSong) {
         setParsedLyrics(null);
+        setLrcMetadata(null);
         return;
       }
       
@@ -692,18 +694,21 @@ export const BackgroundAudio = () => {
         const lrcContent = await baiduAPI.getFileContent(lrcPath);
         if (lrcContent) {
           const parsed = parseLRC(lrcContent);
-          setParsedLyrics(parsed.length > 0 ? parsed : null);
+          setParsedLyrics(parsed.lines.length > 0 ? parsed.lines : null);
+          setLrcMetadata(parsed.metadata);
         } else {
           setParsedLyrics(null);
+          setLrcMetadata(null);
         }
       } catch (error) {
         // 静默失败，不要打扰用户
         setParsedLyrics(null);
+        setLrcMetadata(null);
       }
     };
     
     loadAutoLyrics();
-  }, [currentSong?.fs_id, setParsedLyrics]);
+  }, [currentSong?.fs_id, setParsedLyrics, setLrcMetadata]);
 
   // 组件卸载时清理资源
   useEffect(() => {
