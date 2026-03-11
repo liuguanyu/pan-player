@@ -1,8 +1,74 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
 import { Button } from '@/components/ui/button';
 import { Play, Pause, SkipBack, SkipForward, Maximize2 } from 'lucide-react';
 import { getCurrentLyricIndex } from '@/lib/lrc-parser';
+
+const MarqueeText: React.FC<{ text: string; className?: string }> = ({ text, className }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
+  const [scrollAmount, setScrollAmount] = useState(0);
+
+  useEffect(() => {
+    const checkScroll = () => {
+      if (containerRef.current && textRef.current) {
+        // 先移除动画以便准确测量
+        textRef.current.style.transition = 'none';
+        textRef.current.style.transform = 'none';
+        
+        requestAnimationFrame(() => {
+          if (!containerRef.current || !textRef.current) return;
+          const containerWidth = containerRef.current.clientWidth;
+          const textWidth = textRef.current.scrollWidth;
+          
+          if (textWidth > containerWidth) {
+            setScrollAmount(textWidth - containerWidth);
+          } else {
+            setScrollAmount(0);
+          }
+        });
+      }
+    };
+    
+    checkScroll();
+    window.addEventListener('resize', checkScroll);
+    
+    const timer = setTimeout(checkScroll, 100);
+    return () => {
+      window.removeEventListener('resize', checkScroll);
+      clearTimeout(timer);
+    };
+  }, [text]);
+
+  useEffect(() => {
+    if (scrollAmount > 0 && textRef.current) {
+      const el = textRef.current;
+      el.style.transform = 'translateX(0px)';
+      el.style.transition = 'none';
+      
+      const timer = setTimeout(() => {
+        if (!el) return;
+        // 根据滚动距离动态计算时间，这里假设速度是每秒30像素
+        const duration = Math.max(2000, scrollAmount * 30);
+        el.style.transition = `transform ${duration}ms linear`;
+        el.style.transform = `translateX(-${scrollAmount}px)`;
+      }, 1000); // 停顿1秒后开始滚动
+      
+      return () => clearTimeout(timer);
+    } else if (textRef.current) {
+      textRef.current.style.transition = 'none';
+      textRef.current.style.transform = 'none';
+    }
+  }, [scrollAmount, text]);
+
+  return (
+    <div ref={containerRef} className={`overflow-hidden whitespace-nowrap ${className || ''}`}>
+      <span ref={textRef} className="block pr-1 w-max" style={{ minWidth: '100%' }}>
+        {text}
+      </span>
+    </div>
+  );
+};
 
 export const MiniPlayer: React.FC = () => {
   const {
@@ -64,19 +130,18 @@ export const MiniPlayer: React.FC = () => {
 
   return (
     <div
-      className="relative w-full h-full bg-gradient-to-r from-blue-900 via-blue-800 to-gray-100 flex items-center justify-between px-4 overflow-hidden"
+      className="relative flex items-center justify-between w-full h-full px-4 overflow-hidden bg-gradient-to-r from-blue-900 via-blue-800 to-gray-100"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* 歌词/歌名显示 */}
-      <div className="flex-1 flex items-center gap-2">
-        <div
-          className={`flex-1 text-white text-sm font-medium truncate transition-opacity duration-300 ${
+      <div className="flex items-center flex-1 gap-2 overflow-hidden">
+        <MarqueeText
+          text={currentLyricText}
+          className={`flex-1 text-white text-sm font-medium transition-opacity duration-300 ${
             isHovered ? 'opacity-30' : 'opacity-100'
           }`}
-        >
-          {currentLyricText}
-        </div>
+        />
         {playbackRate !== 1 && (
           <div
             className={`text-xs text-white/80 font-bold bg-white/20 px-2 py-0.5 rounded transition-opacity duration-300 ${
@@ -99,9 +164,9 @@ export const MiniPlayer: React.FC = () => {
           variant="ghost"
           size="icon"
           onClick={playPrevious}
-          className="h-8 w-8 text-white hover:bg-white/20"
+          className="w-8 h-8 text-white hover:bg-white/20"
         >
-          <SkipBack className="h-4 w-4" />
+          <SkipBack className="w-4 h-4" />
         </Button>
 
         {/* 播放/暂停 */}
@@ -109,12 +174,12 @@ export const MiniPlayer: React.FC = () => {
           variant="ghost"
           size="icon"
           onClick={togglePlayPause}
-          className="h-10 w-10 text-white hover:bg-white/20"
+          className="w-10 h-10 text-white hover:bg-white/20"
         >
           {isPlaying ? (
-            <Pause className="h-5 w-5 fill-current" />
+            <Pause className="w-5 h-5 fill-current" />
           ) : (
-            <Play className="h-5 w-5 fill-current" />
+            <Play className="w-5 h-5 fill-current" />
           )}
         </Button>
 
@@ -123,9 +188,9 @@ export const MiniPlayer: React.FC = () => {
           variant="ghost"
           size="icon"
           onClick={playNext}
-          className="h-8 w-8 text-white hover:bg-white/20"
+          className="w-8 h-8 text-white hover:bg-white/20"
         >
-          <SkipForward className="h-4 w-4" />
+          <SkipForward className="w-4 h-4" />
         </Button>
 
         {/* 切换回大窗口 */}
@@ -133,9 +198,9 @@ export const MiniPlayer: React.FC = () => {
           variant="ghost"
           size="icon"
           onClick={handleToggleMiniMode}
-          className="h-8 w-8 text-white hover:bg-white/20 ml-2"
+          className="w-8 h-8 ml-2 text-white hover:bg-white/20"
         >
-          <Maximize2 className="h-4 w-4" />
+          <Maximize2 className="w-4 h-4" />
         </Button>
       </div>
     </div>
