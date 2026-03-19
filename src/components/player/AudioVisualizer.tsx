@@ -14,6 +14,7 @@ import { drawBars } from './visualizations/BarsVisualizer';
 import { drawWave } from './visualizations/WaveVisualizer';
 import { drawParticles, clearParticles } from './visualizations/ParticlesVisualizer';
 import { drawDancingSheep } from './visualizations/DancingSheepVisualizer';
+import { drawDancingSheep2 } from './visualizations/DancingSheep2Visualizer';
 
 interface AudioVisualizerProps {
   className?: string;
@@ -78,6 +79,8 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ className }) =
         drawParticles(ctx, audioData, width, height, centerX, centerY);
       } else if (visualizationType === 'sheep') {
         drawDancingSheep(ctx, audioData, width, height);
+      } else if (visualizationType === 'sheep2') {
+        drawDancingSheep2(ctx, audioData, width, height);
       }
 
       animationRef.current = requestAnimationFrame(draw);
@@ -132,6 +135,12 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ className }) =
           onCheckedChange={() => setVisualizationType('sheep')}
         >
           跳舞小羊
+        </ContextMenuCheckboxItem>
+        <ContextMenuCheckboxItem
+          checked={visualizationType === 'sheep2'}
+          onCheckedChange={() => setVisualizationType('sheep2')}
+        >
+          跳舞小羊2
         </ContextMenuCheckboxItem>
       </ContextMenuContent>
     </ContextMenu>

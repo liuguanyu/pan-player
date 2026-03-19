@@ -59,7 +59,7 @@ interface PlayerState {
   
   // 音频可视化
   showVisualizer: boolean;
-  visualizationType: 'particles' | 'bars' | 'wave' | 'sheep' | 'none';
+  visualizationType: 'particles' | 'bars' | 'wave' | 'sheep' | 'sheep2' | 'none';
   
   // 播放控制方法
   setIsPlaying: (isPlaying: boolean) => void;
@@ -101,7 +101,7 @@ interface PlayerState {
   
   // 音频可视化方法
   setShowVisualizer: (show: boolean) => void;
-  setVisualizationType: (type: 'particles' | 'bars' | 'wave' | 'sheep' | 'none') => void;
+  setVisualizationType: (type: 'particles' | 'bars' | 'wave' | 'sheep' | 'sheep2' | 'none') => void;
   
   // 重置播放器
   reset: () => void;
