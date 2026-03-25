@@ -206,7 +206,7 @@ class PlaylistService {
     }
 
     const items = [...playlist.items];
-    
+
     items.sort((a, b) => {
       let result = 0;
       switch (key) {
@@ -234,6 +234,173 @@ class PlaylistService {
 
     updatePlaylist(updatedPlaylist);
     return true;
+  }
+
+  /**
+   * 导出所有播放列表为JSON
+   */
+  public exportAllPlaylists(): string {
+    const { playlists, recentSongs } = usePlayerStore.getState();
+
+    const exportData = {
+      version: '1.0',
+      export_time: new Date().toISOString(),
+      playlists: playlists,
+      recentSongs: recentSongs
+    };
+
+    return JSON.stringify(exportData, null, 2);
+  }
+
+  /**
+   * 导出单个播放列表为JSON
+   */
+  public exportPlaylist(playlistName: string): string | null {
+    const playlist = this.getPlaylist(playlistName);
+
+    if (!playlist) {
+      return null;
+    }
+
+    const exportData = {
+      version: '1.0',
+      export_time: new Date().toISOString(),
+      playlist: playlist
+    };
+
+    return JSON.stringify(exportData, null, 2);
+  }
+
+  /**
+   * 从JSON导入播放列表
+   */
+  public importFromJSON(jsonString: string): { success: boolean; message: string; imported?: number } {
+    try {
+      console.log('开始解析JSON字符串，长度:', jsonString.length);
+
+      const data = JSON.parse(jsonString);
+      console.log('解析成功，数据结构:', { version: data.version, hasPlaylists: !!data.playlists, hasPlaylist: !!data.playlist });
+
+      // 验证数据格式
+      if (!data.version) {
+        console.error('缺少version字段');
+        return { success: false, message: '无效的歌单文件格式: 缺少version字段' };
+      }
+
+      const { playlists } = usePlayerStore.getState();
+      let importedCount = 0;
+
+      // 情况1: 导入全部歌单格式 (包含 playlists 数组)
+      if (data.playlists && Array.isArray(data.playlists)) {
+        console.log('检测到全量导出格式，歌单数量:', data.playlists.length);
+
+        const { updatePlaylist, addPlaylist } = usePlayerStore.getState();
+
+        data.playlists.forEach((importedPlaylist: Playlist, index: number) => {
+          console.log(`处理歌单 ${index + 1}/${data.playlists.length}:`, importedPlaylist.name);
+
+          try {
+            const existingIndex = playlists.findIndex(p => p.name === importedPlaylist.name);
+
+            if (existingIndex >= 0) {
+              // 如果已存在，合并歌曲
+              const existing = playlists[existingIndex];
+              const mergedItems = [...existing.items];
+
+              importedPlaylist.items.forEach(item => {
+                if (!mergedItems.some(m => m.fs_id === item.fs_id)) {
+                  mergedItems.push(item);
+                }
+              });
+
+              updatePlaylist({
+                ...existing,
+                items: mergedItems,
+                update_time: Math.floor(Date.now() / 1000)
+              });
+            } else {
+              // 不存在，直接添加
+              addPlaylist(importedPlaylist);
+            }
+
+            importedCount++;
+          } catch (error) {
+            console.error(`处理歌单 ${importedPlaylist.name} 失败:`, error);
+          }
+        });
+
+        // 导入最近播放（可选）
+        if (data.recentSongs && Array.isArray(data.recentSongs)) {
+          const { addRecentSong } = usePlayerStore.getState();
+          data.recentSongs.forEach((song: PlaylistItem) => {
+            addRecentSong(song);
+          });
+        }
+      }
+      // 情况2: 导入单个歌单格式 (包含 playlist 对象)
+      else if (data.playlist) {
+        console.log('检测到单个歌单导出格式');
+
+        const { updatePlaylist, addPlaylist } = usePlayerStore.getState();
+        const importedPlaylist = data.playlist as Playlist;
+        const existingIndex = playlists.findIndex(p => p.name === importedPlaylist.name);
+
+        if (existingIndex >= 0) {
+          // 如果已存在，合并歌曲
+          const existing = playlists[existingIndex];
+          const mergedItems = [...existing.items];
+
+          importedPlaylist.items.forEach(item => {
+            if (!mergedItems.some(m => m.fs_id === item.fs_id)) {
+              mergedItems.push(item);
+            }
+          });
+
+          updatePlaylist({
+            ...existing,
+            items: mergedItems,
+            update_time: Math.floor(Date.now() / 1000)
+          });
+        } else {
+          // 不存在，直接添加
+          addPlaylist(importedPlaylist);
+        }
+
+        importedCount = 1;
+      }
+      else {
+        console.error('未找到有效的歌单数据');
+        return { success: false, message: '无效的歌单文件格式: 未找到playlists或playlist字段' };
+      }
+
+      console.log('导入完成，导入数量:', importedCount);
+      return {
+        success: true,
+        message: `成功导入 ${importedCount} 个播放列表`,
+        imported: importedCount
+      };
+    } catch (error) {
+      console.error('导入歌单失败:', error);
+      return {
+        success: false,
+        message: `解析文件失败: ${error instanceof Error ? error.message : '未知错误'}`
+      };
+    }
+  }
+
+  /**
+   * 下载导出文件到本地
+   */
+  public downloadExportFile(content: string, filename: string): void {
+    const blob = new Blob([content], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 }
 

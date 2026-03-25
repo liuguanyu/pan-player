@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { usePlayerStore } from '@/store/playerStore';
-import { Plus, Trash2, Edit2, GripVertical } from 'lucide-react';
+import { Plus, Trash2, Edit2, GripVertical, Download } from 'lucide-react';
 import { AddPlaylistDialog } from './AddPlaylistDialog';
+import { ImportExportDialog } from './ImportExportDialog';
 import { playlistService } from '@/services/playlist.service';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -170,6 +171,7 @@ export const PlaylistSidebar: React.FC = () => {
   
   const { isAuthenticated } = useAuth();
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showImportExportDialog, setShowImportExportDialog] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -226,14 +228,24 @@ export const PlaylistSidebar: React.FC = () => {
     <div className="w-64 border-r bg-muted/30 flex flex-col">
       <div className="p-4 border-b">
         <h2 className="font-semibold mb-2">我的列表</h2>
-        <Button
-          variant="secondary"
-          className="w-full justify-start text-sm"
-          onClick={() => setShowAddDialog(true)}
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          新建列表
-        </Button>
+        <div className="space-y-2">
+          <Button
+            variant="secondary"
+            className="w-full justify-start text-sm"
+            onClick={() => setShowAddDialog(true)}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            新建列表
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full justify-start text-sm"
+            onClick={() => setShowImportExportDialog(true)}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            导入/导出
+          </Button>
+        </div>
       </div>
       
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -288,6 +300,12 @@ export const PlaylistSidebar: React.FC = () => {
       <AddPlaylistDialog
         open={showAddDialog}
         onOpenChange={setShowAddDialog}
+      />
+
+      {/* 导入导出对话框 */}
+      <ImportExportDialog
+        open={showImportExportDialog}
+        onOpenChange={setShowImportExportDialog}
       />
     </div>
   );
