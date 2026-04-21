@@ -11,10 +11,15 @@ import {
   Music,
   Type,
   Cloud,
-  CloudUpload
+  CloudUpload,
+  Search,
+  ListChecks
 } from 'lucide-react';
 import { parsePlainText, generateLRC, formatLRCTime, parseLRC, parseLRCTimeTag } from '@/lib/lrc-parser';
 import { baiduAPI } from '@/services/baidu-api.service';
+import { lyricsService, LyricSearchResult } from '@/services/lyrics.service';
+import { useDownloadStore } from '@/store/downloadStore';
+import { DownloadManager } from '@/components/lyrics/DownloadManager';
 import {
   Dialog,
   DialogContent,
@@ -50,6 +55,15 @@ export const LyricsEditor: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showOverwriteDialog, setShowOverwriteDialog] = useState(false);
   const [pendingUploadPath, setPendingUploadPath] = useState<string>('');
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<LyricSearchResult[]>([]);
+  const [searchError, setSearchError] = useState<string>('');
+  const [selectedSearchId, setSelectedSearchId] = useState<string>('');
+
+  const addTask = useDownloadStore(state => state.addTask);
+  const updateTask = useDownloadStore(state => state.updateTask);
+  const setShowManager = useDownloadStore(state => state.setShowManager);
 
   // 非受控输入 ref —— 直接读取 DOM 值，彻底避免受控输入 + IME 冲突
   const editTextRef = useRef<HTMLInputElement>(null);
@@ -217,6 +231,82 @@ export const LyricsEditor: React.FC = () => {
     setTextInput('');
     setShowTextInput(false);
     alert('歌词导入成功！请为每句歌词设置时间。');
+  };
+
+  // ---------- 搜索相关 ----------
+  const [showSearchDialog, setShowSearchDialog] = useState(false);
+
+  const handleSearchOpen = () => {
+    if (currentSong) {
+      // 预填歌曲名，去掉扩展名
+      setSearchKeyword(currentSong.server_filename.replace(/\.[^/.]+$/, ''));
+    }
+    setShowSearchDialog(true);
+    setSearchResults([]);
+    setSearchError('');
+    setSelectedSearchId('');
+  };
+
+  const executeSearch = async () => {
+    if (!searchKeyword.trim()) return;
+    setSearching(true);
+    setSearchError('');
+    try {
+      const results = await lyricsService.search(searchKeyword);
+      setSearchResults(results);
+    } catch (err: any) {
+      setSearchError(err.message || '搜索失败');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleDownloadLyric = async () => {
+    if (!selectedSearchId || !currentSong) return;
+
+    const audioPath = currentSong.path;
+    const lrcPath = audioPath.replace(/\.[^.]+$/, '.lrc');
+    const songName = currentSong.server_filename;
+
+    const taskId = addTask({
+      type: 'lyrics',
+      songName,
+      lrcContent: '',
+      targetPanPath: lrcPath,
+    });
+    
+    setShowManager(true);
+    setShowSearchDialog(false);
+
+    try {
+      updateTask(taskId, { status: 'downloading', progress: 10 });
+      // 1. 从歌词源拉取歌词
+      const lrcText = await lyricsService.getLyric(selectedSearchId);
+      updateTask(taskId, { progress: 30, lrcContent: lrcText });
+
+      // 如果当前没有歌词，直接展示
+      if (!parsedLyrics || parsedLyrics.length === 0) {
+        const lyricsObj = parseLRC(lrcText);
+        setParsedLyrics(lyricsObj.lines);
+        setLrcMetadata(lyricsObj.metadata);
+      }
+
+      // 2. 上传网盘
+      const exists = await baiduAPI.checkLrcFileExists(lrcPath);
+      updateTask(taskId, { progress: 50 });
+      
+      const result = await baiduAPI.uploadLrcFile(lrcPath, lrcText, (prog) => {
+        updateTask(taskId, { progress: 50 + prog * 0.5 });
+      });
+
+      if (result.success) {
+        updateTask(taskId, { status: 'success', progress: 100, completedAt: Date.now() });
+      } else {
+        updateTask(taskId, { status: 'failed', error: result.error || '上传失败' });
+      }
+    } catch (err: any) {
+      updateTask(taskId, { status: 'failed', error: err.message || '下载失败' });
+    }
   };
 
   // ---------- 行操作 ----------
@@ -421,6 +511,28 @@ export const LyricsEditor: React.FC = () => {
                 上传到云端
               </>
             )}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSearchOpen}
+            className="gap-1"
+            disabled={!currentSong}
+            title="搜索歌词并自动上传到百度网盘"
+          >
+            <Search className="h-4 w-4" />
+            搜索歌词
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowManager(true)}
+            className="gap-1"
+          >
+            <ListChecks className="h-4 w-4" />
+            下载管理
           </Button>
 
           <div className="w-px bg-border mx-1" />
@@ -732,6 +844,75 @@ export const LyricsEditor: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 搜索歌词对话框 */}
+      <Dialog open={showSearchDialog} onOpenChange={setShowSearchDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>搜索歌词</DialogTitle>
+            <DialogDescription>
+              从 lrc.64h.cn 搜索歌词，下载后将自动应用并上传到百度网盘同目录。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 mt-2">
+            <Input
+              value={searchKeyword}
+              onChange={e => setSearchKeyword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && executeSearch()}
+              placeholder="输入歌曲名或歌手名..."
+              className="flex-1"
+            />
+            <Button onClick={executeSearch} disabled={searching || !searchKeyword.trim()}>
+              {searching ? '搜索中...' : '搜索'}
+            </Button>
+          </div>
+
+          {searchError && (
+            <div className="text-sm text-red-500 mt-2">{searchError}</div>
+          )}
+
+          <div className="mt-4 max-h-[40vh] overflow-y-auto border rounded-md">
+            {searchResults.length === 0 && !searching && !searchError ? (
+              <div className="p-8 text-center text-muted-foreground text-sm">
+                暂无搜索结果
+              </div>
+            ) : (
+              <div className="divide-y">
+                {searchResults.map(res => (
+                  <div
+                    key={res.id}
+                    className={`p-3 flex items-center justify-between cursor-pointer hover:bg-muted/50 transition-colors ${selectedSearchId === res.id ? 'bg-primary/10' : ''}`}
+                    onClick={() => setSelectedSearchId(res.id)}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-sm truncate">{res.title}</div>
+                      <div className="text-xs text-muted-foreground mt-1 flex gap-3">
+                        <span>歌手: {res.artist || '未知'}</span>
+                        <span>时长: {res.duration || '未知'}</span>
+                        <span>来源: {res.source}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setShowSearchDialog(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={handleDownloadLyric}
+              disabled={!selectedSearchId || searching}
+            >
+              下载并应用
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <DownloadManager />
     </div>
   );
 };
