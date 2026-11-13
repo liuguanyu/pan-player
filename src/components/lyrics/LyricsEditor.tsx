@@ -29,7 +29,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-export const LyricsEditor: React.FC = () => {
+export interface LyricsEditorProps {
+  /** 挂载时是否直接展开文本粘贴输入框（从“粘贴歌词文本”入口进入时为 true） */
+  autoShowTextInput?: boolean;
+}
+
+export const LyricsEditor: React.FC<LyricsEditorProps> = ({ autoShowTextInput = false }) => {
   const {
     parsedLyrics,
     setParsedLyrics,
@@ -49,7 +54,10 @@ export const LyricsEditor: React.FC = () => {
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
 
   const [textInput, setTextInput] = useState('');
-  const [showTextInput, setShowTextInput] = useState(false);
+  // 无歌词时默认展开粘贴输入框，避免“进入编辑模式后还要再点一次显示输入框”
+  const [showTextInput, setShowTextInput] = useState(
+    () => autoShowTextInput || !parsedLyrics || parsedLyrics.length === 0
+  );
   const [showMetadata, setShowMetadata] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -69,6 +77,14 @@ export const LyricsEditor: React.FC = () => {
   const editTextRef = useRef<HTMLInputElement>(null);
   const editTimeRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const pasteRef = useRef<HTMLTextAreaElement>(null);
+
+  // 粘贴框展开时自动聚焦，进入编辑模式后可直接 Ctrl/Cmd+V 粘贴
+  useEffect(() => {
+    if (showTextInput) {
+      requestAnimationFrame(() => pasteRef.current?.focus());
+    }
+  }, [showTextInput]);
 
   // editingLineId 变化时延迟聚焦文本输入框
   // 使用双重 requestAnimationFrame 确保 React DOM 完全渲染后再 focus
@@ -438,7 +454,7 @@ export const LyricsEditor: React.FC = () => {
             className="gap-1"
           >
             <Type className="h-4 w-4" />
-            {showTextInput ? '隐藏输入框' : '显示输入框'}
+            {showTextInput ? '隐藏输入框' : '粘贴歌词文本'}
           </Button>
 
           <Button
@@ -630,6 +646,7 @@ export const LyricsEditor: React.FC = () => {
             </Button>
           </div>
           <Textarea
+            ref={pasteRef}
             value={textInput}
             onChange={(e) => setTextInput(e.target.value)}
             onCompositionEnd={(e) => setTextInput(e.currentTarget.value)}
@@ -648,8 +665,19 @@ export const LyricsEditor: React.FC = () => {
         className="flex-1 overflow-y-auto bg-background rounded border"
       >
         {filteredLyrics.length === 0 ? (
-          <div className="text-center text-muted-foreground py-8">
-            请先导入歌词文本文件
+          <div className="text-center text-muted-foreground py-8 space-y-3">
+            <p>暂无歌词，可直接粘贴歌词文本，或导入 LRC / 文本文件</p>
+            {!showTextInput && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowTextInput(true)}
+                className="gap-1"
+              >
+                <Type className="h-4 w-4" />
+                粘贴歌词文本
+              </Button>
+            )}
           </div>
         ) : (
           <div className="space-y-0">

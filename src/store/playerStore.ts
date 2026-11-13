@@ -161,7 +161,8 @@ export const usePlayerStore = create<PlayerState>()(
         set({
           currentSong,
           parsedLyrics: null, // 切换歌曲时清空歌词
-          lyrics: null
+          lyrics: null,
+          isEditingLyrics: false // 切换歌曲时退出歌词编辑模式，避免无歌词时卡在编辑态
         });
         
         // 通知主进程更新当前歌曲（用于系统托盘显示）

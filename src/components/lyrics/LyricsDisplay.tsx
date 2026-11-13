@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
 import { parseLRC, getCurrentLyricIndex, LyricLine } from '@/lib/lrc-parser';
 import { Button } from '@/components/ui/button';
-import { Upload, X, Edit, Eye } from 'lucide-react';
+import { Upload, X, Edit, Eye, ClipboardPaste } from 'lucide-react';
 import { LyricsEditor } from './LyricsEditor';
 
 interface LyricsDisplayProps {
@@ -23,6 +23,17 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
   const [lyrics, setLyrics] = React.useState<LyricLine[]>(parsedLyrics || []);
   const [currentIndex, setCurrentIndex] = React.useState(-1);
   const lastScrollIndexRef = useRef(-1);
+  // 进入编辑模式时是否直接展开粘贴输入框
+  const [pasteOnEnter, setPasteOnEnter] = React.useState(false);
+
+  /**
+   * 进入歌词编辑模式。
+   * withPaste 为 true 时直接展开文本粘贴框，使“粘贴歌词”与“选择LRC文件”处于同一层深度。
+   */
+  const enterEditMode = (withPaste: boolean) => {
+    setPasteOnEnter(withPaste);
+    setIsEditingLyrics(true);
+  };
 
   // 当 store 中的 parsedLyrics 变化时，更新本地状态
   useEffect(() => {
@@ -104,26 +115,31 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
           <h3 className="text-lg font-semibold">
             {isEditingLyrics ? '歌词编辑' : '歌词显示'}
           </h3>
-          {lyrics.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsEditingLyrics(!isEditingLyrics)}
-              className="gap-2"
-            >
-              {isEditingLyrics ? (
-                <>
-                  <Eye className="h-4 w-4" />
-                  预览模式
-                </>
-              ) : (
-                <>
-                  <Edit className="h-4 w-4" />
-                  编辑模式
-                </>
-              )}
-            </Button>
-          )}
+          {/* 切换按钮始终可用：无歌词（例如切歌后）时也必须能退出编辑模式 */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (isEditingLyrics) {
+                setIsEditingLyrics(false);
+              } else {
+                enterEditMode(false);
+              }
+            }}
+            className="gap-2"
+          >
+            {isEditingLyrics ? (
+              <>
+                <Eye className="h-4 w-4" />
+                预览模式
+              </>
+            ) : (
+              <>
+                <Edit className="h-4 w-4" />
+                编辑模式
+              </>
+            )}
+          </Button>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose}>
           <X className="h-5 w-5" />
@@ -133,7 +149,7 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
       {/* 歌词内容或编辑器 */}
       {isEditingLyrics ? (
         <div className="flex-1 overflow-hidden p-4">
-          <LyricsEditor />
+          <LyricsEditor autoShowTextInput={pasteOnEnter} />
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto" ref={containerRef}>
@@ -205,7 +221,15 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
           </Button>
           <Button
             variant="outline"
-            onClick={() => setIsEditingLyrics(true)}
+            onClick={() => enterEditMode(true)}
+            className="gap-2"
+          >
+            <ClipboardPaste className="h-4 w-4" />
+            粘贴歌词文本
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => enterEditMode(false)}
             className="gap-2"
           >
             <Edit className="h-4 w-4" />
@@ -227,7 +251,15 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ onClose }) => {
           </Button>
           <Button
             variant="outline"
-            onClick={() => setIsEditingLyrics(true)}
+            onClick={() => enterEditMode(true)}
+            className="gap-2"
+          >
+            <ClipboardPaste className="h-4 w-4" />
+            粘贴歌词文本
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => enterEditMode(false)}
             className="gap-2"
           >
             <Edit className="h-4 w-4" />
