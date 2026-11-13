@@ -59,7 +59,7 @@ interface PlayerState {
   
   // 音频可视化
   showVisualizer: boolean;
-  visualizationType: 'particles' | 'bars' | 'wave' | 'sheep' | 'sheep2' | 'none';
+  visualizationType: 'particles' | 'bars' | 'wave' | 'sheep' | 'none';
   
   // 播放控制方法
   setIsPlaying: (isPlaying: boolean) => void;
@@ -516,7 +516,9 @@ export const usePlayerStore = create<PlayerState>()(
         }
         return { showVisualizer };
       }),
-      setVisualizationType: (visualizationType) => set({ visualizationType }),
+      // 兼容旧数据：已移除的 sheep2 映射为 sheep
+      setVisualizationType: (visualizationType) =>
+        set({ visualizationType: visualizationType === 'sheep2' ? 'sheep' : visualizationType }),
       
       // 重置播放器
       reset: () => set({
@@ -538,7 +540,12 @@ export const usePlayerStore = create<PlayerState>()(
         recentSongs: state.recentSongs,
         showVisualizer: state.showVisualizer,
         visualizationType: state.visualizationType
-      })
+      }),
+      // 兼容旧数据：已移除的 sheep2 映射为 sheep
+      migrate: (persisted: any) => {
+        if (persisted?.visualizationType === 'sheep2') persisted.visualizationType = 'sheep';
+        return persisted;
+      }
     }
   )
 );
